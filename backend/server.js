@@ -11,7 +11,7 @@ const {callModel}=require('./model');
 const {placeSourceImages}=require('./source-images');
 const {parseSearchResponse,recommend}=require('./research');
 const {articleUrl,readArticle}=require('./benchmark');
-const VERSION='2.1.2', INITIAL='根据固定 System 依据，把原始随笔润色成一篇完整的微信公众号文章。保留真实观点与个人表达，不虚构信息。';
+const VERSION='2.1.3', INITIAL='根据固定 System 依据，把原始随笔润色成一篇完整的微信公众号文章。保留真实观点与个人表达，不虚构信息。';
 const PREFIX='article_web_', KEY=process.env.ENCRYPTION_KEY||'', SIGN=process.env.SESSION_SECRET||'';
 const app=cloudbase.init({env:process.env.CLOUDBASE_ENV_ID||cloudbase.SYMBOL_CURRENT_ENV,...(process.env.CLOUDBASE_APIKEY?{accessKey:process.env.CLOUDBASE_APIKEY}:{})});
 const db=app.database();
@@ -100,7 +100,7 @@ async function documentInput(p){
   const $=cheerio.load(html||'<p></p>'),images=[];
   $('img').each((n,el)=>{const src=$(el).attr('src');if(src){const id=`资料图片 ${n+1}`;images.push({id,src,alt:$(el).attr('alt')||id,beforeText:$(el).parent().prev().text(),afterText:$(el).parent().next().text()});$(el).replaceWith(`[${id}]`);}});
   if(images.length) content=$.root().text();
-  return {sourceDocContent:content,sourceDocHtml:html,sourceImages:images,sourceDocImageCount:images.length,sourceDocTitle:p.docxName||'上传 / 粘贴的资料',sourceDocUrl:String(p.sourceDocUrl||''),sourceDocWarnings:[]};
+  return {sourceDocContent:content,sourceDocHtml:html,sourceImages:images,sourceDocImageCount:images.length,sourceDocTitle:p.docxName||p.sourceDocTitle||'上传 / 粘贴的资料',sourceDocUrl:String(p.sourceDocUrl||''),sourceDocWarnings:[]};
 }
 const benchmarkReads=new Map();
 async function benchmarkInput(p,user){
@@ -275,12 +275,28 @@ async function route(req,p,path){
   }
   if(path==='/benchmark/read')return benchmarkInput(p,user);
   if(path==='/document/read')return documentInput(p);
+  if(path==='/task/draft/new'){
+    const id=p.taskId||uid();if(!/^[a-f0-9]{32}$/.test(id))throw new UserError('任务编号无效');
+    const existing=await get('tasks',id);if(existing){await task(user,id);return {taskId:id};}
+    const stamp=formatTaskTimestamp();await add('tasks',id,{user,title:'文章任务 · '+stamp,titleStamp:stamp,systemLocked:false,draftRevision:0,draftInput:{},createdAt:nowIso(),updatedAt:nowIso(),schemaVersion:1});return {taskId:id};
+  }
+  if(path==='/task/draft/save'){
+    const t=await task(user,p.taskId);if(t.systemLocked!==false)throw new UserError('System 已锁定，请在意见中修改文章',409);
+    const doc=await documentInput(p),input={...doc,modelIds:[...new Set(p.modelIds||[])].slice(0,8),benchmarkUrl:String(p.benchmarkUrl||'').slice(0,4000),originalEssay:String(p.originalEssay||'').slice(0,120000),researchKeyword:String(p.researchKeyword||'').slice(0,100),researchGoal:String(p.researchGoal||'').slice(0,2000),recommendModel:String(p.recommendModel||'').slice(0,100)};
+    const title=(input.researchKeyword||input.originalEssay.replace(/^探究话题[：:]\s*/, '').split(/[，。\n]/)[0]).slice(0,32);
+    const revision=t.draftRevision+1,updatedAt=nowIso();
+    if(!await claim('tasks',t._id,'draftRevision',p.revision,{draftInput:input,draftRevision:revision,title:(title||'文章任务')+' · '+t.titleStamp,updatedAt}))throw new UserError('任务在另一窗口已更新，请重新打开后编辑',409);
+    return {revision,updatedAt,title:(title||'文章任务')+' · '+t.titleStamp};
+  }
   if(path==='/task/create'){
     if(trial&&(await trialQuota(user)).remaining===0)throw new UserError('10 次体验额度已用完，历史文章仍可查看',429);
     const ids=[...new Set(p.modelIds||[])];if(!ids.length||ids.length>8)throw new UserError('请选择 1–8 个写作模型');
     if(!String(p.originalEssay||'').trim())throw new UserError('请填写随笔或初步想法');
-    const chosen=await Promise.all(ids.map(id=>model(user,id)));const [doc,b]=await Promise.all([documentInput(p),benchmarkInput(p,user)]),id=uid();
-    await add('tasks',id,{user,title:formatTaskTimestamp(),...doc,...b,benchmarkUrl:String(p.benchmarkUrl||''),originalEssay:String(p.originalEssay).slice(0,120000),systemLocked:true,createdAt:nowIso(),updatedAt:nowIso(),schemaVersion:1});
+    const draft=p.taskId?await task(user,p.taskId):null;if(draft&&draft.systemLocked!==false)throw new UserError('此任务已生成，请打开任务继续修改',409);
+    const chosen=await Promise.all(ids.map(id=>model(user,id)));const [doc,b]=await Promise.all([documentInput(p),benchmarkInput(p,user)]),id=draft?draft._id:uid();
+    const data={...doc,...b,benchmarkUrl:String(p.benchmarkUrl||''),originalEssay:String(p.originalEssay).slice(0,120000),systemLocked:true,updatedAt:nowIso(),schemaVersion:1};
+    if(draft){if(!await claim('tasks',id,'draftRevision',p.draftRevision,{...data,draftInput:null,draftRevision:draft.draftRevision+1}))throw new UserError('任务在另一窗口已更新，请重新打开后生成',409);}
+    else await add('tasks',id,{user,title:formatTaskTimestamp(),...data,createdAt:nowIso()});
     for(const m of chosen)await add('variants',digest(id+':'+m.id),{user,taskId:id,modelId:m.id,modelName:m.name,source:m.source,status:'idle',articleHtml:'',comments:[],revision:0,activeAttemptId:null,completedAttemptId:null});
     return {taskId:id};
   }

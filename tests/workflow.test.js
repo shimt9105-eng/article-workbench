@@ -116,3 +116,18 @@ test('an article can be generated without Word and retains its original essay an
     const result=(await route(req(alice),{},'/state')).tasks.find(t=>t.id===created.taskId);assert.equal(result.sourceDocTitle,'未上传 Word');assert(result.variants[0].articleHtml.includes('无需 Word 的文章'));
   }finally{global.fetch=previousFetch;}
 });
+
+test('named drafts save before generation, keep Word and research inputs, and lock the same task',async()=>{
+  const id='a'.repeat(32),created=await route(req(alice),{taskId:id},'/task/draft/new');assert.equal(created.taskId,id);
+  assert.equal((await route(req(alice),{taskId:id},'/task/draft/new')).taskId,id);
+  await assert.rejects(()=>route(req(bob),{taskId:id},'/task/draft/new'),/不存在/);
+  const p={taskId:id,revision:0,modelIds:['qa-text'],benchmarkUrl:'https://mp.weixin.qq.com/s?draft=1',originalEssay:'真实随笔',researchKeyword:'亚马逊 AI',researchGoal:'跨境卖家',recommendModel:'qa-text',sourceDocTitle:'用户资料.docx',sourceDocContent:'真实 Word 资料',sourceDocHtml:'<p>真实 Word 资料</p><img src="data:image/png;base64,aGVsbG8=">'};
+  const saved=await route(req(alice),p,'/task/draft/save');assert.equal(saved.revision,1);assert(saved.title.startsWith('亚马逊 AI'));
+  let draft=(await route(req(alice),{},'/state')).tasks.find(t=>t.id===id);assert.equal(draft.systemLocked,false);assert.equal(draft.variants.length,0);assert.equal(draft.draftInput.originalEssay,'真实随笔');assert.equal(draft.draftInput.sourceImages.length,1);assert.equal(draft.draftInput.sourceDocTitle,'用户资料.docx');
+  await assert.rejects(()=>route(req(alice),p,'/task/draft/save'),/另一窗口/);
+  await assert.rejects(()=>route(req(bob),{...p,revision:1},'/task/draft/save'),/不存在/);
+  const locked=await route(req(alice),{...p,draftRevision:1,benchmarkContent:'真正的完整参考正文'.repeat(25)},'/task/create');assert.equal(locked.taskId,id);
+  draft=(await route(req(alice),{},'/state')).tasks.find(t=>t.id===id);assert.equal(draft.systemLocked,true);assert.equal(draft.variants.length,1);assert.equal(draft.draftInput,null);assert.equal(draft.title,saved.title);
+  await assert.rejects(()=>route(req(alice),{...p,revision:2},'/task/draft/save'),/已锁定/);
+  await assert.rejects(()=>route(req(alice),{...p,draftRevision:2},'/task/create'),/已生成/);
+});

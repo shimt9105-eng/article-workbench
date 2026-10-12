@@ -19,6 +19,7 @@ function activeTask() {
 }
 
 function variantsOf(task) {
+  if(task?.systemLocked===false)return [];
   if (Array.isArray(task?.variants) && task.variants.length) return task.variants;
   if (!task) return [];
   return [{
@@ -329,11 +330,11 @@ function renderComments(variant) {
 
 function renderActive() {
   const task = creating ? null : activeTask();
-  if (!task) {
+  if (!task || task.systemLocked===false) {
     ui.newTaskPanel.classList.remove("hidden");
     ui.lockedSystemPanel.classList.add("hidden");
     ui.commentsPanel.classList.add("hidden");
-    ui.articleTitle.textContent = "新文章";
+    ui.articleTitle.textContent = task?.title || "新文章";
     ui.articleMeta.textContent = "";
     ui.variantSwitcher.classList.add("hidden");
     ui.variantSwitcher.innerHTML = "";
@@ -393,20 +394,22 @@ function render() {
   renderActive();
 }
 
-ui.newTaskButton.addEventListener("click", () => {
-  creating = true;
-  selectedText = "";
-  render();
-  refreshModels().then(() => ui.modelOptions.querySelector('input[type="checkbox"]')?.focus());
+ui.newTaskButton.addEventListener("click", async () => {
+  ui.newTaskButton.disabled=true;
+  try{await window.startNamedTask();}catch(e){toast(e.message,12000);}finally{ui.newTaskButton.disabled=false;}
 });
 
 ui.taskList.addEventListener("click", async (event) => {
   const button = event.target.closest("[data-task-id]");
   if (!button) return;
-  creating = false;
-  ui.addModelPanel.classList.add("hidden");
-  appState = await window.editor2.selectTask(button.dataset.taskId);
-  render();
+  try{
+    await commitTextSave();if(pendingTextEdit)throw new Error('正文尚未保存，请稍后重试');
+    await window.flushDraft?.();
+    appState = await window.editor2.selectTask(button.dataset.taskId);creating=false;
+    ui.addModelPanel.classList.add("hidden");render();
+    await window.restoreTaskInputs?.(activeTask());
+    await window.setWorkflowStep(activeTask()?.systemLocked===false?'research':'write');
+  }catch(e){toast(e.message,12000);}
 });
 
 ui.addModelButton.addEventListener("click", async () => {
@@ -465,7 +468,11 @@ ui.newTaskForm.addEventListener("submit", async (event) => {
   }
   showBusy("多个模型正在并行写作", `已选择 ${modelIds.length} 个模型，正在分别生成完整 HTML…`);
   try {
+    await window.flushDraft?.();
+    const draft=activeTask()?.systemLocked===false?activeTask():null;
+    window.draftGenerationBusy=true;
     appState = await window.editor2.createTask({
+      ...(draft?{taskId:draft.id,draftRevision:draft.draftRevision}:{}),
       modelIds,
       benchmarkUrl: ui.benchmarkInput.value,
       originalEssay: ui.essayInput.value,
@@ -479,6 +486,7 @@ ui.newTaskForm.addEventListener("submit", async (event) => {
   } catch (error) {
     toast(error.message || String(error), 12000);
   } finally {
+    window.draftGenerationBusy=false;
     hideBusy();
   }
 });

@@ -13,7 +13,7 @@ window.webApi=async function(path,payload={}){
   const token=localStorage.getItem('articleGuestSession')||sessionStorage.getItem('articleSession');
   const response=await fetch(window.WORKBENCH_API+path,{method:'POST',headers:{'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{})},body:JSON.stringify(payload),signal:AbortSignal.timeout(570000)});
   let data;try{data=await response.json();}catch{throw new Error('连接中断；请查看任务最新状态后再决定是否重试');}
-  if(!['/guest/enter','/quota','/state','/models','/config/status'].includes(path))window.dispatchEvent(new Event('quotaChanged'));
+  if(!['/guest/enter','/quota','/state','/models','/config/status','/task/draft/new','/task/draft/save'].includes(path))window.dispatchEvent(new Event('quotaChanged'));
   if(!response.ok){if(response.status===401&&!path.startsWith('/auth/'))window.dispatchEvent(new Event('sessionExpired'));throw new Error(data.error||'操作失败');}
   return data;
 };
@@ -34,7 +34,15 @@ async function runVariants(taskId,modelIds,instruction,selectedText){
 window.clearUploadedDocument=()=>{uploadedDocument=null;window.wordUploadBusy=false;window.wordUploadError='';document.getElementById('sourceFile').value='';document.getElementById('sourceFileStatus').textContent='';document.getElementById('clearUpload').classList.add('hidden');};
 window.setUploadedDocument=data=>{uploadedDocument=data;};
 window.setBenchmarkDocument=(data,url)=>{benchmarkDocument=data?{...data,url}:null;};
+window.restoreUploadedDocument=data=>{
+  uploadedDocument=data?.sourceDocContent||data?.sourceImages?.length?data:null;
+  window.wordUploadBusy=false;window.wordUploadError='';document.getElementById('sourceFile').value='';
+  document.getElementById('sourceFileStatus').textContent=uploadedDocument?`已保存 ${data.sourceDocTitle} · ${data.sourceDocImageCount||0} 张图片`:'';
+  document.getElementById('clearUpload').classList.toggle('hidden',!uploadedDocument);
+};
 window.editor2={
+  newDraft:async()=>{const taskId=crypto.randomUUID().replaceAll('-','');const r=await api('/task/draft/new',{taskId});selections.taskId=r.taskId;saveSelection();return getState();},
+  saveDraft:async p=>{const result=await api('/task/draft/save',{...p,...(uploadedDocument||{})});const t=currentState?.tasks.find(t=>t.id===p.taskId);if(t){t.draftRevision=result.revision;t.updatedAt=result.updatedAt;t.title=result.title;}return result;},
   getState,listModels:()=>api('/models'),
   selectTask:async taskId=>{selections.taskId=taskId;saveSelection();return getState();},
   selectVariant:async(taskId,modelId)=>{selections.taskId=taskId;selections[taskId]=modelId;saveSelection();return getState();},

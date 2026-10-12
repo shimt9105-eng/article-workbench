@@ -9,7 +9,7 @@ el('settingsButton').onclick=window.openSettings;
 el('closeSettings').onclick=()=>{el('settingsDialog').classList.add('hidden');window.pendingPublish=false;};
 async function entered(){
   el('authPanel').classList.add('hidden');el('workspace').classList.remove('hidden');el('workflowNav').classList.remove('hidden');message('accountLabel','免登录体验 · 本浏览器独立保存');window.completeLogin();
-  await authReady;appState=await editor2.getState();creating=!appState.tasks.length;render();await refreshModels();fillRecommendModels();
+  await authReady;appState=await editor2.getState();creating=!appState.tasks.length;render();await refreshModels();fillRecommendModels();await window.restoreTaskInputs?.(activeTask());
   try{const c=await connection();if(!c.models.length)toast('请先配置写作模型');}catch(e){toast(e.message);}
 }
 async function enterGuest(){
@@ -21,7 +21,7 @@ async function enterGuest(){
 el('guestRetry').onclick=enterGuest;
 window.addEventListener('sessionExpired',()=>{localStorage.removeItem('articleGuestSession');enterGuest();});
 async function refreshQuota(){try{const q=await webApi('/quota');window.trialRemaining=q.remaining;message('quotaStatus',`${q.scope==='site'?'全站合计':'访客'}体验 ${q.remaining} / ${q.limit} 次剩余${q.remaining===0?' · 已用完':''}`);applyTrialQuota();}catch{}}
-function applyTrialQuota(){const exhausted=window.trialRemaining===0,history=!creating&&!!activeTask()?.readOnly;el('newTaskButton').disabled=exhausted;el('newTaskForm').querySelector('button[type=submit]').disabled=exhausted;el('researchSubmit').disabled=exhausted||researchBusy;el('recommendRetry').disabled=exhausted||researchBusy;if(exhausted||history){el('publishButton').disabled=true;el('addModelButton').disabled=true;el('sendCommentButton').disabled=true;}}
+function applyTrialQuota(){const exhausted=window.trialRemaining===0,history=!creating&&!!activeTask()?.readOnly;el('newTaskButton').disabled=false;el('newTaskForm').querySelector('button[type=submit]').disabled=exhausted;el('researchSubmit').disabled=exhausted||researchBusy;el('recommendRetry').disabled=exhausted||researchBusy;if(exhausted||history){el('publishButton').disabled=true;el('addModelButton').disabled=true;el('sendCommentButton').disabled=true;}}
 window.addEventListener('quotaChanged',refreshQuota);
 function articleCard(a,index,reason){
   return `<article class="research-card"><div class="research-card-head"><span class="badge">${reason?'推荐 '+(index+1):'搜索结果'}</span><span>${escapeHtml(a.readCountText||'阅读量未提供')}</span></div><h3>${escapeHtml(a.title)}</h3><p class="meta">${escapeHtml(a.account)} · ${escapeHtml(a.publishedText||'日期未提供')}</p><p>${escapeHtml(reason||a.summary||'未提供摘要')}</p><div class="research-card-actions"><a href="${escapeHtml(a.url)}" target="_blank" rel="noopener noreferrer">打开原文 ↗</a><button class="secondary" data-article-id="${escapeHtml(a.id)}">选为对标</button></div></article>`;
@@ -38,7 +38,7 @@ el('researchForm').onsubmit=async e=>{
   e.preventDefault();if(researchBusy)return;if(!el('recommendModel').value){toast('请先选择推荐模型');return;}
   researchBusy=true;buttonBusy('researchSubmit',true,'正在搜索…');el('recommendRetry').disabled=true;el('recommendations').replaceChildren();el('allResults').classList.add('hidden');search=null;
   try{
-    await window.checkTrialCalls(2);message('researchStatus','正在搜索微信公众号文章…');search=await webApi('/research/search',{keyword:el('keywordInput').value});
+    await window.ensureDraftTask();await window.flushDraft();await window.checkTrialCalls(2);message('researchStatus','正在搜索微信公众号文章…');search=await webApi('/research/search',{keyword:el('keywordInput').value});
     el('searchResults').innerHTML=search.articles.map((a,n)=>articleCard(a,n)).join('');el('allResults').classList.toggle('hidden',!search.articles.length);
     if(!search.articles.length){message('researchStatus','搜索服务本次返回 0 篇文章，尚未调用 AI 推荐。可尝试减少关键词或稍后重试。');el('recommendRetry').classList.add('hidden');return;}
     await recommendSearch();
@@ -48,17 +48,17 @@ el('researchForm').onsubmit=async e=>{
 el('recommendRetry').onclick=async()=>{if(!search||researchBusy)return;researchBusy=true;buttonBusy('recommendRetry',true);try{await recommendSearch();}catch(e){message('researchStatus',e.message);}finally{researchBusy=false;buttonBusy('recommendRetry',false);}};
 el('researchPanel').addEventListener('click',async e=>{
   const button=e.target.closest('[data-article-id]');if(!button||!search)return;const a=search.articles.find(a=>a.id===button.dataset.articleId);if(!a)return;
-  creating=true;render();window.setWorkflowStep('write');el('benchmarkInput').value=a.url;window.setBenchmarkDocument(null);message('benchmarkStatus',`已选入《${a.title}》，正在读取全文…`);button.disabled=true;
+  await window.ensureDraftTask();creating=false;render();window.setWorkflowStep('write');el('benchmarkInput').value=a.url;window.setBenchmarkDocument(null);window.queueDraftSave?.();message('benchmarkStatus',`已选入《${a.title}》，正在读取全文…`);button.disabled=true;
   try{const r=await webApi('/benchmark/read',{benchmarkUrl:a.url});if(el('benchmarkInput').value===a.url){window.setBenchmarkDocument(r,a.url);message('benchmarkStatus',`已读取 ${r.benchmarkContent.length} 字`);}}catch(error){if(el('benchmarkInput').value===a.url)message('benchmarkStatus',error.message);}finally{button.disabled=false;el('benchmarkInput').scrollIntoView({behavior:'smooth',block:'center'});}
 });
-el('benchmarkInput').addEventListener('input',()=>{window.setBenchmarkDocument(null);message('benchmarkStatus','');});
+el('benchmarkInput').addEventListener('input',()=>{window.setBenchmarkDocument(null);window.queueDraftSave?.();message('benchmarkStatus','');});
 el('sourceFile').onchange=async()=>{
   const f=el('sourceFile').files?.[0];if(!f)return;const attempt=++sourceUploadAttempt;window.setUploadedDocument(null);window.wordUploadError='';el('clearUpload').classList.remove('hidden');
   if(f.size>8*1024*1024){window.wordUploadBusy=false;window.wordUploadError='文件超过 8MB，请缩减后重试';message('sourceFileStatus',window.wordUploadError);return;}
   window.wordUploadBusy=true;
   message('sourceFileStatus','正在读取 Word 正文和全部内嵌图片…');
   try{const data=await new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(String(r.result).split(',')[1]);r.onerror=reject;r.readAsDataURL(f);});
-    const parsed=await webApi('/document/read',{docxBase64:data,docxName:f.name});if(attempt!==sourceUploadAttempt)return;window.setUploadedDocument(parsed);message('sourceFileStatus','');el('clearUpload').classList.remove('hidden');
+    const parsed=await webApi('/document/read',{docxBase64:data,docxName:f.name});if(attempt!==sourceUploadAttempt)return;window.setUploadedDocument(parsed);window.queueDraftSave?.();message('sourceFileStatus','');el('clearUpload').classList.remove('hidden');
   }catch(e){if(attempt===sourceUploadAttempt){window.wordUploadError=e.message;message('sourceFileStatus',e.message);}}
   finally{if(attempt===sourceUploadAttempt)window.wordUploadBusy=false;}
 };
@@ -89,7 +89,7 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'){el('settingsDialog'
 window.addEventListener('taskCreated',async()=>{appState=await editor2.getState();creating=false;render();});
 el('newTaskButton').addEventListener('click',fillRecommendModels);
 const previousRender=renderActive;
-renderActive=function(){previousRender();applyTrialQuota();el('researchPanel').classList.remove('hidden');el('feedbackEmpty').classList.toggle('hidden',!creating&&!!activeTask());};
+renderActive=function(){previousRender();applyTrialQuota();el('researchPanel').classList.remove('hidden');el('feedbackEmpty').classList.toggle('hidden',!creating&&!!activeTask()&&activeTask().systemLocked!==false);};
 window.addEventListener('online',()=>toast('网络已恢复，可查看任务最新状态'));
 window.addEventListener('offline',()=>toast('网络已断开，未保存内容请保留；恢复后核对任务状态',12000));
 setInterval(async()=>{
@@ -109,6 +109,59 @@ window.setWorkflowStep=async step=>{
 };
 el('workflowNav').addEventListener('click',e=>{const b=e.target.closest('[data-step]');if(b)window.setWorkflowStep(b.dataset.step);});
 el('workflowNav').addEventListener('keydown',e=>{if(!['ArrowLeft','ArrowRight'].includes(e.key))return;e.preventDefault();const tabs=[...el('workflowNav').querySelectorAll('[data-step]')],n=tabs.indexOf(document.activeElement),next=tabs[(n+(e.key==='ArrowRight'?1:2))%3];next.focus();window.setWorkflowStep(next.dataset.step);});
-el('newTaskButton').addEventListener('click',()=>window.setWorkflowStep('write'));
-el('taskList').addEventListener('click',e=>{if(e.target.closest('[data-task-id]'))window.setWorkflowStep('write');});
+
+
 window.setWorkflowStep(sessionStorage.getItem('articleStep')||'write');
+
+let draftTimer=null,draftRestoring=false,draftSaveChain=Promise.resolve(),draftCreation=null,namedTaskBusy=false;
+function currentDraftInput(){return {modelIds:selectedModelIds(),benchmarkUrl:el('benchmarkInput').value,originalEssay:el('essayInput').value,researchKeyword:el('keywordInput').value,researchGoal:el('researchGoal').value,recommendModel:el('recommendModel').value};}
+window.ensureDraftTask=async()=>{
+  if(activeTask()?.systemLocked===false)return;
+  if(!draftCreation)draftCreation=editor2.newDraft();
+  try{appState=await draftCreation;creating=false;render();}finally{draftCreation=null;}
+};
+window.flushDraft=async()=>{
+  clearTimeout(draftTimer);draftTimer=null;
+  if(window.wordUploadBusy)throw new Error('Word 正在读取，请读取完成后再切换任务');
+  if(draftRestoring||window.draftGenerationBusy)return;
+  // Serialize saves so a later edit cannot be overwritten by an earlier response.
+  const p=currentDraftInput();
+  const saving=draftSaveChain.catch(()=>{}).then(async()=>{
+    if(activeTask()?.systemLocked!==false)return;
+    const t=activeTask();const result=await editor2.saveDraft({...p,taskId:t.id,revision:t.draftRevision});
+    renderTasks();el('articleTitle').textContent=result.title;el('saveStatus').textContent='草稿已保存';
+  });draftSaveChain=saving;return saving;
+};
+window.queueDraftSave=()=>{
+  if(draftRestoring||window.draftGenerationBusy)return;
+  clearTimeout(draftTimer);draftTimer=setTimeout(async()=>{
+    try{if(window.wordUploadBusy)return;if(creating||activeTask()?.systemLocked===false||el('workspace').dataset.step==='research'){await window.ensureDraftTask();await window.flushDraft();}}
+    catch(e){el('saveStatus').textContent='草稿保存失败';toast(e.message,12000);}
+  },900);
+};
+window.restoreTaskInputs=async t=>{
+  if(t?.systemLocked!==false)return;
+  draftRestoring=true;sourceUploadAttempt++;
+  try{
+    const p=t.draftInput||{};el('benchmarkInput').value=p.benchmarkUrl||'';el('essayInput').value=p.originalEssay||'';
+    el('keywordInput').value=p.researchKeyword||'';el('researchGoal').value=p.researchGoal||'';
+    fillRecommendModels();el('recommendModel').value=p.recommendModel||'';
+    for(const box of el('modelOptions').querySelectorAll('input'))box.checked=(p.modelIds||[]).includes(box.value);
+    window.restoreUploadedDocument(p);window.setBenchmarkDocument(null);
+    message('benchmarkStatus','');search=null;recommendations=[];el('recommendations').innerHTML='';el('searchResults').innerHTML='';el('allResults').classList.add('hidden');message('researchStatus','');
+    el('saveStatus').textContent='草稿已保存';
+  }finally{draftRestoring=false;}
+};
+window.startNamedTask=async()=>{
+  if(namedTaskBusy)return;namedTaskBusy=true;
+  try{
+  await commitTextSave();if(pendingTextEdit)throw new Error('正文尚未保存，请稍后重试');
+  if(creating&&Object.values(currentDraftInput()).some(v=>Array.isArray(v)?v.length:String(v).trim()))await window.ensureDraftTask();
+  await window.flushDraft();
+  appState=await editor2.newDraft();creating=false;selectedText='';render();await refreshModels();await window.restoreTaskInputs(activeTask());await window.setWorkflowStep('research');el('keywordInput').focus();
+  }finally{namedTaskBusy=false;}
+};
+for(const id of ['newTaskForm','researchForm']){
+  el(id).addEventListener('input',window.queueDraftSave);el(id).addEventListener('change',window.queueDraftSave);
+}
+el('clearUpload').addEventListener('click',window.queueDraftSave);

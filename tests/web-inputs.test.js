@@ -7,13 +7,15 @@ const vm=require('node:vm');
 function browserFixture(){
   const calls=[],elements={sourceFile:{value:''},sourceFileStatus:{textContent:''},clearUpload:{classList:{add(){}}}},storage={getItem(){return null;},setItem(){}};
   const window={WORKBENCH_API:'https://isolated.invalid',dispatchEvent(){}};
+  let fixtureTask={id:'isolated-task',variants:[]};
   const fetch=async(url,options)=>{
     if(String(url).endsWith('history.json'))return {ok:true,json:async()=>({tasks:[]})};
     const route=String(url).replace(window.WORKBENCH_API,'');const payload=JSON.parse(options.body);calls.push({route,payload});
-    const data=route==='/quota'?{remaining:10}:route==='/task/create'?{taskId:'isolated-task'}:route==='/state'?{tasks:[{id:'isolated-task',variants:[]}]}:{ok:true};
+    if(route==='/task/draft/new')fixtureTask={id:payload.taskId,systemLocked:false,draftRevision:0,draftInput:{},variants:[]};
+    const data=route==='/task/draft/new'?{taskId:payload.taskId}:route==='/task/draft/save'?{revision:payload.revision+1,title:'真实主题 · 任务',updatedAt:'2026-10-12'}:route==='/quota'?{remaining:10}:route==='/task/create'?{taskId:'isolated-task'}:route==='/state'?{tasks:[fixtureTask]}:{ok:true};
     return {ok:true,json:async()=>data};
   };
-  const context=vm.createContext({window,fetch,location:{href:'https://isolated.invalid/'},URL,AbortSignal,Event,structuredClone,localStorage:storage,sessionStorage:storage,document:{getElementById(id){assert(id in elements,'Removed input must not be accessed: '+id);return elements[id];}}});
+  const context=vm.createContext({window,fetch,crypto:require('node:crypto'),location:{href:'https://isolated.invalid/'},URL,AbortSignal,Event,structuredClone,localStorage:storage,sessionStorage:storage,document:{getElementById(id){assert(id in elements,'Removed input must not be accessed: '+id);return elements[id];}}});
   vm.runInContext(fs.readFileSync(path.join(__dirname,'../web/web-api.js'),'utf8'),context);
   return {window,calls,elements};
 }
@@ -45,4 +47,13 @@ test('an uploading or rejected Word cannot silently become a no-upload article',
   window.wordUploadBusy=true;await assert.rejects(()=>window.editor2.createTask(p),/Word 正在读取/);assert.equal(calls.length,0);
   window.wordUploadBusy=false;window.wordUploadError='无法读取 Word';await assert.rejects(()=>window.editor2.createTask(p),/更换 Word 或移除上传/);assert.equal(calls.length,0);
   window.clearUploadedDocument();await window.editor2.createTask(p);assert(calls.some(c=>c.route==='/task/create'));
+});
+
+test('new named task and saving edits are separate from paid generation',async()=>{
+  const {window,calls}=browserFixture();const s=await window.editor2.newDraft(),t=s.tasks[0];assert.equal(t.systemLocked,false);
+  window.setUploadedDocument({sourceDocTitle:'保存的资料.docx',sourceDocContent:'资料正文'});
+  await window.editor2.saveDraft({taskId:t.id,revision:0,originalEssay:'已编辑随笔',researchKeyword:'亚马逊 AI'});
+  assert.equal(t.draftRevision,1);assert.equal(t.title,'真实主题 · 任务');
+  assert.equal(calls.find(c=>c.route==='/task/draft/save').payload.sourceDocTitle,'保存的资料.docx');
+  assert(!calls.some(c=>c.route==='/variant/generate'||c.route==='/task/create'||c.route==='/quota'));
 });
