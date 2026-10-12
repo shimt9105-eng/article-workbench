@@ -68,7 +68,7 @@ def main():
         fd=os.open(secret_file,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
         with os.fdopen(fd,'w') as f: json.dump(private,f)
     os.chmod(secret_file,0o600)
-    env={**private,'CLOUDBASE_ENV_ID':settings['CLOUDBASE_ENV_ID'],'CLOUDBASE_APIKEY':key,'MODELS_B64':base64.b64encode(json.dumps(models,ensure_ascii=False).encode()).decode(),'TIKHUB_API_KEY':search_keys[0],'WECHAT_API_BASE_URL':wx['WECHAT_API_BASE_URL'],'WECHAT_PROXY_SECRET':wx.get('WECHAT_PROXY_SECRET',''),'ALLOWED_ORIGINS':'https://shimt9105-eng.github.io','USE_SHARED_CONFIG':'enabled','DAILY_LIMIT':'quota:30','GLOBAL_DAILY_LIMIT':'quota:300','TZ':'Asia/Shanghai'}
+    env={**private,'CLOUDBASE_ENV_ID':settings['CLOUDBASE_ENV_ID'],'CLOUDBASE_APIKEY':key,'MODELS_B64':base64.b64encode(json.dumps(models,ensure_ascii=False).encode()).decode(),'TIKHUB_API_KEY':search_keys[0],'WECHAT_API_BASE_URL':wx['WECHAT_API_BASE_URL'],'WECHAT_PROXY_SECRET':wx.get('WECHAT_PROXY_SECRET',''),'ALLOWED_ORIGINS':'https://shimt9105-eng.github.io','USE_SHARED_CONFIG':'enabled','TRIAL_ENABLED':'enabled','TRIAL_SCOPE':'site','DAILY_LIMIT':'quota:30','GLOBAL_DAILY_LIMIT':'quota:300','TZ':'Asia/Shanghai'}
     SENSITIVE.extend([key,search_keys[0],wx.get('WECHAT_PROXY_SECRET',''),*private.values(),*[m['apiKey'] for m in models],env['MODELS_B64']])
     config={'envId':settings['CLOUDBASE_ENV_ID'],'functions':[{'name':NAME,'dir':str(SCRIPT/'backend'),'type':'HTTP','runtime':'Nodejs20.19','handler':'server.main','gatewayPath':'/'+NAME,'public':True,'timeout':900,'memorySize':512,'installDependency':True,'ignore':['node_modules/**','node_modules','.git/**'],'envVariables':env}]}
     # Bootstrap only new, separately named collections; existing desktop/bot state is untouched.
@@ -78,7 +78,7 @@ def main():
     with tempfile.TemporaryDirectory(prefix='article-workbench-deploy-') as directory:
         p=Path(directory)/'cloudbaserc.json';p.write_text(json.dumps(config,ensure_ascii=False));p.chmod(0o600)
         run([cli,'fn','deploy',NAME,'--force','--httpFn','--dir',str(SCRIPT/'backend'),'--install-dependency','true','--json'],directory)
-    public={'version':'2.0.0','envId':settings['CLOUDBASE_ENV_ID'],'api':settings['CLOUDBASE_SITE_URL']+'/'+NAME,'models':[{'source':m['source'],'name':m['name'],'type':m['type']} for m in models],'dailyLimit':30,'globalDailyLimit':300}
+    public={'version':'2.1.0','envId':settings['CLOUDBASE_ENV_ID'],'api':settings['CLOUDBASE_SITE_URL']+'/'+NAME,'models':[{'source':m['source'],'name':m['name'],'type':m['type']} for m in models],'trialLimit':10,'trialScope':'site'}
     (SCRIPT.parent/'document'/'deployment.json').write_text(json.dumps(public,ensure_ascii=False,indent=2))
     print(json.dumps({'deployed':NAME,'modelCount':len(models),'api':public['api']},ensure_ascii=False))
 

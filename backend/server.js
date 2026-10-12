@@ -10,13 +10,16 @@ const {systemPrompt,buildModelInput,buildCoverPrompt,buildDraftArticles,sanitize
 const {callModel}=require('./model');
 const {placeSourceImages}=require('./source-images');
 const {normalize,recommend}=require('./research');
-const VERSION='2.0.0', INITIAL='根据固定 System 依据，把原始随笔润色成一篇完整的微信公众号文章。保留真实观点与个人表达，不虚构信息。';
+const VERSION='2.1.0', INITIAL='根据固定 System 依据，把原始随笔润色成一篇完整的微信公众号文章。保留真实观点与个人表达，不虚构信息。';
 const PREFIX='article_web_', KEY=process.env.ENCRYPTION_KEY||'', SIGN=process.env.SESSION_SECRET||'';
 const app=cloudbase.init({env:process.env.CLOUDBASE_ENV_ID||cloudbase.SYMBOL_CURRENT_ENV,...(process.env.CLOUDBASE_APIKEY?{accessKey:process.env.CLOUDBASE_APIKEY}:{})});
 const db=app.database();
 const col=name=>db.collection(PREFIX+name);
 const uid=()=>crypto.randomUUID().replaceAll('-','');
 const shared=['true','enabled'].includes(process.env.USE_SHARED_CONFIG);
+const trial=process.env.TRIAL_ENABLED==='enabled';
+const trialId=user=>digest('trial:v1:'+(process.env.TRIAL_SCOPE==='visitor'?user:'site'));
+async function trialQuota(user){const r=await get('limits',trialId(user));const used=r?.count||0;return {limit:10,used,remaining:Math.max(0,10-used),scope:process.env.TRIAL_SCOPE==='visitor'?'visitor':'site'};}
 class UserError extends Error {constructor(message,status=400){super(message);this.status=status;}}
 async function get(name,id){const r=await col(name).where({_id:id}).limit(1).get();return r.data?.[0]||null;}
 async function add(name,id,data){await col(name).add({_id:id,...data});}
@@ -29,6 +32,11 @@ async function limit(id,max=30){
   if(r.updated!==1)throw new UserError('操作过于频繁，请 5 分钟后再试',429);
 }
 async function usage(user){
+  if(trial){
+    const id=trialId(user);try{await add('limits',id,{count:0,createdAt:Date.now()});}catch(e){if(!await get('limits',id))throw e;}
+    const r=await col('limits').where({_id:id,count:db.command.lt(10)}).update({count:db.command.inc(1)});
+    if(r.updated!==1)throw new UserError('10 次体验额度已用完，历史文章仍可查看',429);return;
+  }
   const globalId=digest('global:'+new Date().toISOString().slice(0,10));
   try{await add('limits',globalId,{count:0,createdAt:Date.now()});}catch(e){if(!await get('limits',globalId))throw e;}
   const global=await col('limits').where({_id:globalId,count:db.command.lt(Number(String(process.env.GLOBAL_DAILY_LIMIT||300).replace('quota:','')))}).update({count:db.command.inc(1)});
@@ -44,7 +52,7 @@ async function auth(req){
   const token=(req.headers.authorization||'').replace(/^Bearer /,'');const [body,mac]=token.split('.');
   if(!body||!mac||!same(crypto.createHmac('sha256',SIGN).update(body).digest('hex'),mac))throw new UserError('请先登录',401);
   let session;try{session=JSON.parse(Buffer.from(body,'base64url').toString());}catch{throw new UserError('登录失效，请重新登录',401);}
-  if(session.exp<Date.now()||!await get('sessions',session.sid))throw new UserError('登录失效，请重新登录',401);
+  if(session.exp<Date.now()||!(session.kind==='guest'&&trial&&/^guest_[a-f0-9]{64}$/.test(session.user))&&!await get('sessions',session.sid))throw new UserError('登录失效，请重新登录',401);
   return session;
 }
 async function credentials(user){const record=await get('credentials',user);return record?decrypt(record.encrypted,KEY):{};}
@@ -179,7 +187,16 @@ async function publish(user,p){
 }
 async function route(req,p,path){
   if(path==='/health')return {ok:true,version:VERSION};
+  if(path==='/guest/enter'){
+    if(!trial)throw new UserError('免登录体验尚未开启',404);
+    await limit('guest:'+digest(req.headers['x-forwarded-for']||req.socket.remoteAddress||''),20);
+    if(!/^[a-f0-9]{64}$/.test(p.deviceSecret||''))throw new UserError('访客凭据无效');
+    const session={kind:'guest',user:'guest_'+digest(p.deviceSecret),exp:Date.now()+365*86400000};
+    const payload=Buffer.from(JSON.stringify(session)).toString('base64url');
+    return {token:payload+'.'+crypto.createHmac('sha256',SIGN).update(payload).digest('hex'),quota:await trialQuota(session.user)};
+  }
   if(path==='/auth/login'||path==='/auth/register'){
+    if(trial)throw new UserError('请直接使用免登录体验',403);
     await limit('auth:'+digest(req.headers['x-forwarded-for']||req.socket.remoteAddress||''),20);
     const username=String(p.username||'').trim().toLowerCase();if(!/^[a-z0-9_-]{3,32}$/.test(username))throw new UserError('用户名使用 3–32 个英文字母、数字、下划线或短横线');
     const id=digest(username),existing=await get('users',id);
@@ -198,8 +215,9 @@ async function route(req,p,path){
   await limit(user,120);
   if(path==='/models')return (await models(user)).map(({id,name,source})=>({id,name,source}));
   if(path==='/state')return state(user);
+  if(path==='/quota')return trial?trialQuota(user):{limit:30,scope:'daily'};
   if(path==='/config/status'){
-    const c=await config(user);return {shared,hasSearch:!!c.tikhub,models:c.models.map(({id,name,source,protocol,baseUrl,type})=>({id,name,source,protocol,baseUrl,type})),wechat:c.wechat?{name:c.wechat.name,appSuffix:c.wechat.appId.slice(-6),verifiedAt:c.wechat.verifiedAt,author:c.wechat.author}:null,dailyLimit:Number(String(process.env.DAILY_LIMIT||30).replace('quota:',''))};
+    const c=await config(user);return {...(trial?{quota:await trialQuota(user)}:{}),shared,hasSearch:!!c.tikhub,models:c.models.map(({id,name,source,protocol,baseUrl,type})=>({id,name,source,protocol,baseUrl,type})),wechat:c.wechat?{name:c.wechat.name,appSuffix:c.wechat.appId.slice(-6),verifiedAt:c.wechat.verifiedAt,author:c.wechat.author}:null,dailyLimit:Number(String(process.env.DAILY_LIMIT||30).replace('quota:',''))};
   }
   if(path==='/config/save'){
     const current=await credentials(user);
@@ -238,6 +256,7 @@ async function route(req,p,path){
   if(path==='/benchmark/read')return benchmarkInput(p);
   if(path==='/document/read')return documentInput(p);
   if(path==='/task/create'){
+    if(trial&&(await trialQuota(user)).remaining===0)throw new UserError('10 次体验额度已用完，历史文章仍可查看',429);
     const ids=[...new Set(p.modelIds||[])];if(!ids.length||ids.length>8)throw new UserError('请选择 1–8 个写作模型');
     if(!String(p.originalEssay||'').trim())throw new UserError('请填写随笔或初步想法');
     const chosen=await Promise.all(ids.map(id=>model(user,id)));const [doc,b]=await Promise.all([documentInput(p),benchmarkInput(p)]),id=uid();

@@ -1,23 +1,28 @@
 const el=id=>document.getElementById(id);
-let signup=false,search=null,recommendations=[],researchBusy=false;
+let search=null,recommendations=[],researchBusy=false;
 function message(id,value){el(id).textContent=value;}
 function buttonBusy(id,busy,label){el(id).disabled=busy;if(label)el(id).textContent=label;}
 function fillRecommendModels(){const select=el('recommendModel'),value=select.value;select.replaceChildren(new Option('请选择来源 / 模型',''));for(const m of availableModels)select.add(new Option(`${m.source} / ${m.name}`,m.id));select.value=value;}
-async function connection(){const c=await webApi('/config/status');message('connectionStatus',`${c.shared?'默认使用共享 API 配置':'使用自己的 API 配置'} · 每日额度 ${c.dailyLimit} 次 · 搜索${c.hasSearch?'已配置':'未配置'} · ${c.wechat?`已绑定 ${c.wechat.name}（AppID 尾号 ${c.wechat.appSuffix}）`:'尚未绑定公众号'}`);el('unbindButton').classList.toggle('hidden',!c.wechat);return c;}
+async function connection(){const c=await webApi('/config/status');message('connectionStatus',`${c.shared?'默认使用共享 API 配置':'使用自己的 API 配置'} · ${c.quota?`总体验额度 ${c.quota.remaining} / 10 次剩余`:`每日额度 ${c.dailyLimit} 次`} · 搜索${c.hasSearch?'已配置':'未配置'} · ${c.wechat?`已绑定 ${c.wechat.name}（AppID 尾号 ${c.wechat.appSuffix}）`:'尚未绑定公众号'}`);el('unbindButton').classList.toggle('hidden',!c.wechat);return c;}
 window.openSettings=async()=>{el('settingsDialog').classList.remove('hidden');try{await connection();}catch(e){message('connectionStatus',e.message);}el('wxName').focus();};
 el('settingsButton').onclick=window.openSettings;
 el('closeSettings').onclick=()=>{el('settingsDialog').classList.add('hidden');window.pendingPublish=false;};
-el('authToggle').onclick=()=>{signup=!signup;message('authSubmit',signup?'注册并开始':'登录');message('authToggle',signup?'已有账号？登录':'第一次使用？注册账号');el('password').autocomplete=signup?'new-password':'current-password';message('authError','');};
 async function entered(){
-  el('authPanel').classList.add('hidden');el('workspace').classList.remove('hidden');el('workflowNav').classList.remove('hidden');message('accountLabel',sessionStorage.getItem('articleUsername')||'我的工作台');window.completeLogin();
+  el('authPanel').classList.add('hidden');el('workspace').classList.remove('hidden');el('workflowNav').classList.remove('hidden');message('accountLabel','免登录体验 · 本浏览器独立保存');window.completeLogin();
   await authReady;appState=await editor2.getState();creating=!appState.tasks.length;render();await refreshModels();fillRecommendModels();
   try{const c=await connection();if(!c.models.length)toast('请先配置写作模型');}catch(e){toast(e.message);}
 }
-el('authForm').onsubmit=async e=>{e.preventDefault();buttonBusy('authSubmit',true);message('authError','');try{
-  const r=await webApi(signup?'/auth/register':'/auth/login',{username:el('username').value,password:el('password').value});sessionStorage.setItem('articleSession',r.token);sessionStorage.setItem('articleUsername',r.username);el('password').value='';await entered();
-}catch(error){message('authError',error.message);}finally{buttonBusy('authSubmit',false);}};
-el('logoutButton').onclick=async()=>{try{await webApi('/auth/logout');}finally{sessionStorage.removeItem('articleSession');sessionStorage.removeItem('articleUsername');sessionStorage.removeItem('articleSelections');location.reload();}};
-window.addEventListener('sessionExpired',()=>{sessionStorage.removeItem('articleSession');el('authPanel').classList.remove('hidden');el('workspace').classList.add('hidden');el('workflowNav').classList.add('hidden');message('authError','登录已过期，请重新登录');});
+async function enterGuest(){
+  el('guestRetry').classList.add('hidden');message('authError','正在进入免登录体验…');
+  try{let deviceSecret=localStorage.getItem('articleGuestSecret');if(!deviceSecret){deviceSecret=Array.from(crypto.getRandomValues(new Uint8Array(32)),n=>n.toString(16).padStart(2,'0')).join('');localStorage.setItem('articleGuestSecret',deviceSecret);}
+    const r=await webApi('/guest/enter',{deviceSecret});localStorage.setItem('articleGuestSession',r.token);await entered();await refreshQuota();
+  }catch(e){el('authPanel').classList.remove('hidden');el('workspace').classList.add('hidden');el('workflowNav').classList.add('hidden');message('authError',e.message);el('guestRetry').classList.remove('hidden');}
+}
+el('guestRetry').onclick=enterGuest;
+window.addEventListener('sessionExpired',()=>{localStorage.removeItem('articleGuestSession');enterGuest();});
+async function refreshQuota(){try{const q=await webApi('/quota');window.trialRemaining=q.remaining;message('quotaStatus',`${q.scope==='site'?'全站合计':'本浏览器'}体验 ${q.remaining} / ${q.limit} 次剩余${q.remaining===0?' · 已用完':''}`);applyTrialQuota();}catch{}}
+function applyTrialQuota(){const exhausted=window.trialRemaining===0,history=!creating&&!!activeTask()?.readOnly;el('newTaskButton').disabled=exhausted;el('newTaskForm').querySelector('button[type=submit]').disabled=exhausted;el('researchSubmit').disabled=exhausted||researchBusy;el('recommendRetry').disabled=exhausted||researchBusy;if(exhausted||history){el('publishButton').disabled=true;el('addModelButton').disabled=true;el('sendCommentButton').disabled=true;}}
+window.addEventListener('quotaChanged',refreshQuota);
 function articleCard(a,index,reason){
   return `<article class="research-card"><div class="research-card-head"><span class="badge">${reason?'推荐 '+(index+1):'搜索结果'}</span><span>${escapeHtml(a.readCountText||'阅读量未提供')}</span></div><h3>${escapeHtml(a.title)}</h3><p class="meta">${escapeHtml(a.account)} · ${escapeHtml(a.publishedText||'日期未提供')}</p><p>${escapeHtml(reason||a.summary||'未提供摘要')}</p><div class="research-card-actions"><a href="${escapeHtml(a.url)}" target="_blank" rel="noopener noreferrer">打开原文 ↗</a><button class="secondary" data-article-id="${escapeHtml(a.id)}">选为对标</button></div></article>`;
 }
@@ -80,22 +85,22 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'){el('settingsDialog'
 window.addEventListener('taskCreated',async()=>{appState=await editor2.getState();creating=false;render();});
 el('newTaskButton').addEventListener('click',fillRecommendModels);
 const previousRender=renderActive;
-renderActive=function(){previousRender();el('researchPanel').classList.remove('hidden');el('feedbackEmpty').classList.toggle('hidden',!!activeTask());};
+renderActive=function(){previousRender();applyTrialQuota();el('researchPanel').classList.remove('hidden');el('feedbackEmpty').classList.toggle('hidden',!creating&&!!activeTask());};
 window.addEventListener('online',()=>toast('网络已恢复，可查看任务最新状态'));
 window.addEventListener('offline',()=>toast('网络已断开，未保存内容请保留；恢复后核对任务状态',12000));
 setInterval(async()=>{
-  if(!sessionStorage.getItem('articleSession')||pendingTextEdit||document.activeElement===el('commentInput'))return;
+  if(!localStorage.getItem('articleGuestSession')||pendingTextEdit||document.activeElement===el('commentInput'))return;
   const t=activeTask();if(!t?.variants.some(v=>v.status==='processing'))return;
   try{const next=await editor2.getState();if(JSON.stringify(next)!==JSON.stringify(appState)){appState=next;render();}}catch{}
 },6000);
-(async()=>{if(sessionStorage.getItem('articleSession')){try{await webApi('/config/status');await entered();}catch{sessionStorage.removeItem('articleSession');message('authError','请重新登录');}}})();
+enterGuest();
 
 window.setWorkflowStep=async step=>{
   if(!['research','write','feedback'].includes(step))return;
   await commitTextSave();if(pendingTextEdit){toast('正文保存失败，请核对后再切换');return;}
   el('workspace').dataset.step=step;sessionStorage.setItem('articleStep',step);
   for(const b of el('workflowNav').querySelectorAll('[data-step]')){const active=b.dataset.step===step;b.classList.toggle('active',active);b.setAttribute('aria-selected',String(active));b.tabIndex=active?0:-1;}
-  if(step==='feedback'&&activeTask())el('commentInput').focus();
+  if(step==='feedback'&&!creating&&activeTask()&&!activeTask().readOnly)el('commentInput').focus();
   if(step==='research')fillRecommendModels();
 };
 el('workflowNav').addEventListener('click',e=>{const b=e.target.closest('[data-step]');if(b)window.setWorkflowStep(b.dataset.step);});

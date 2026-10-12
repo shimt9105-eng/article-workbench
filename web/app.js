@@ -44,7 +44,7 @@ function timeLabel(value) {
   return new Intl.DateTimeFormat("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(value));
 }
 
-function previewDocument(title, html) {
+function previewDocument(title, html, readOnly=false) {
   const safeTitle = escapeHtml(title || "公众号文章");
   const parsed = new DOMParser().parseFromString(`<main>${html || ""}</main>`, "text/html");
   const root = parsed.querySelector("main");
@@ -79,7 +79,7 @@ function previewDocument(title, html) {
     for (const textNode of textNodes) {
       const span = parsed.createElement("span");
       span.setAttribute("data-editor2-text", "1");
-      span.setAttribute("contenteditable", "plaintext-only");
+      span.setAttribute("contenteditable", readOnly ? "false" : "plaintext-only");
       span.setAttribute("spellcheck", "false");
       span.textContent = textNode.nodeValue;
       textNode.replaceWith(span);
@@ -88,7 +88,7 @@ function previewDocument(title, html) {
   const articleBody = root?.innerHTML || html || "";
   return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${safeTitle}</title><style>
     *{box-sizing:border-box}html{background:#fff}body{margin:0;background:#fff;color:#222;font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;overflow-wrap:anywhere}.wechat-article{width:min(677px,calc(100% - 48px));margin:0 auto;padding:50px 0 96px}.wechat-head{margin-bottom:32px}.wechat-title{margin:0 0 14px;font-size:22px;line-height:1.45;font-weight:700;letter-spacing:.01em;color:#1f2329}.wechat-meta{display:flex;gap:10px;align-items:center;font-size:14px;color:#b2b2b2}.wechat-author{color:#576b95}.wechat-body{font-size:17px;line-height:1.8;letter-spacing:.025em}.wechat-body p{margin:0 0 1.35em}.wechat-body h2{margin:2.2em 0 .9em;font-size:20px;line-height:1.55}.wechat-body h3{margin:1.8em 0 .8em;font-size:18px;line-height:1.55}.wechat-body img{display:block;max-width:100%;height:auto;margin:1.5em auto}.wechat-body a{color:#576b95;text-decoration:none}.wechat-body table{width:100%;border-collapse:collapse}.wechat-body th,.wechat-body td{padding:9px;border:1px solid #dedfe2}.wechat-body blockquote{margin:1.5em 0;padding:12px 16px;border-left:3px solid #d8d8d8;background:#f7f7f7;color:#666}.wechat-body ul,.wechat-body ol{padding-left:1.5em}[data-editor2-source-title]{display:none!important}[data-editor2-text],[data-editor2-preview-title]{cursor:text;border-radius:3px}[data-editor2-text]:focus,[data-editor2-preview-title]:focus{outline:2px solid rgba(51,112,255,.2);background:rgba(51,112,255,.045)}@media(max-width:720px){.wechat-article{width:100%;padding:32px 22px 72px}.wechat-title{font-size:21px}}
-  </style></head><body><article class="wechat-article"><header class="wechat-head"><h1 class="wechat-title"><span data-editor2-preview-title="1" contenteditable="plaintext-only" spellcheck="false">${articleTitle}</span></h1><div class="wechat-meta"><span class="wechat-author">编辑2号</span><span>公众号文章预览</span></div></header><section class="wechat-body">${articleBody}</section></article></body></html>`;
+  </style></head><body><article class="wechat-article"><header class="wechat-head"><h1 class="wechat-title"><span data-editor2-preview-title="1" contenteditable="${readOnly ? "false" : "plaintext-only"}" spellcheck="false">${articleTitle}</span></h1><div class="wechat-meta"><span class="wechat-author">编辑2号</span><span>公众号文章预览</span></div></header><section class="wechat-body">${articleBody}</section></article></body></html>`;
 }
 
 function emptyPreviewDocument() {
@@ -130,7 +130,7 @@ function editedArticleHtml(doc) {
 function scheduleTextSave(doc) {
   const task = activeTask();
   const variant = activeVariant(task);
-  if (!task || !variant) return;
+  if (!task || !variant || task.readOnly) return;
   const html = editedArticleHtml(doc);
   variant.articleHtml = html;
   pendingTextEdit = { taskId: task.id, modelId: variant.modelId, html };
@@ -154,6 +154,7 @@ async function commitTextSave() {
 }
 
 function attachPreviewEditing(doc) {
+  if(activeTask()?.readOnly)return;
   const editable = [...doc.querySelectorAll("[data-editor2-text], [data-editor2-preview-title]")];
   for (const element of editable) {
     element.addEventListener("keydown", (event) => {
@@ -213,7 +214,7 @@ function renderAddModelOptions() {
   const task = activeTask();
   const models = task ? remainingModels(task) : [];
   const selected = new Set([...ui.addModelOptions.querySelectorAll('input[type="checkbox"]:checked')].map((input) => input.value));
-  ui.addModelButton.disabled = !models.length;
+  ui.addModelButton.disabled = !!activeTask()?.readOnly || !models.length;
   ui.addModelButton.title = models.length ? "向当前任务追加写作模型" : "已添加全部可用模型";
   ui.confirmAddModelButton.disabled = !models.length;
   if (!models.length) {
@@ -235,6 +236,7 @@ function publishableVariants(task) {
 }
 
 async function openPublishDialog() {
+  if(activeTask()?.readOnly){toast("历史文章为只读展示");return;}
   await commitTextSave();
   const status = await window.webApi("/config/status");
   if (!status.wechat?.verifiedAt) { window.pendingPublish = true; window.openSettings(); return; }
@@ -285,7 +287,7 @@ function renderTasks() {
   }
   ui.taskList.innerHTML = tasks.map((task) => `
     <button class="task-item ${!creating && task.id === appState.activeTaskId ? "active" : ""}" data-task-id="${escapeHtml(task.id)}">
-      <strong>${escapeHtml(task.title)}</strong>
+      <strong>${escapeHtml(task.title)}${task.readOnly ? " · 历史" : ""}</strong>
       <span>${escapeHtml(variantsOf(task).map((variant) => variant.modelName).join(" / ") || (task.status === "processing" ? "生成中" : "等待生成"))} · ${timeLabel(task.updatedAt)}</span>
     </button>`).join("");
 }
@@ -337,6 +339,7 @@ function renderActive() {
     ui.variantSwitcher.innerHTML = "";
     ui.articlePreview.srcdoc = emptyPreviewDocument();
     ui.publishButton.disabled = true;
+    ui.sendCommentButton.disabled=false;ui.commentInput.disabled=false;ui.addModelButton.disabled=false;
     ui.retryVariantButton.classList.add("hidden");
     ui.saveStatus.textContent = "文字可直接编辑";
     closePublishDialog();
@@ -352,11 +355,17 @@ function renderActive() {
   ui.articleMeta.textContent = `${variant?.modelName || "模型待定"} · System 已锁定 · ${variant?.status === "processing" ? "正在生成" : variant?.status === "error" ? "生成失败" : "网页预览"}`;
   ui.variantSwitcher.innerHTML = variants.map((item) => `<button class="variant-tab ${item.modelId === variant?.modelId ? "active" : ""}" data-model-id="${escapeHtml(item.modelId)}">${escapeHtml((item.source ? item.source + " / " : "") + item.modelName)}${item.status === "processing" ? " · 生成中" : item.status === "error" ? " · 失败" : ""}</button>`).join("");
   ui.variantSwitcher.classList.toggle("hidden", variants.length < 2);
-  ui.articlePreview.srcdoc = previewDocument(task.title, variant?.articleHtml || `<p>${variant?.status === "error" ? escapeHtml(variant.lastError || "生成失败") : "文章尚未生成。"}</p>`);
-  ui.publishButton.disabled = !publishableVariants(task).length;
-  ui.retryVariantButton.classList.toggle("hidden", variant?.status !== "error");
-  ui.saveStatus.textContent = variant?.articleHtml ? "文字可直接编辑" : "暂无可编辑内容";
+  ui.articlePreview.srcdoc = previewDocument(task.title, variant?.articleHtml || `<p>${variant?.status === "error" ? escapeHtml(variant.lastError || "生成失败") : "文章尚未生成。"}</p>`, task.readOnly);
+  ui.publishButton.disabled = task.readOnly || !publishableVariants(task).length;
+  ui.sendCommentButton.disabled=!!task.readOnly;ui.commentInput.disabled=!!task.readOnly;ui.addModelButton.disabled=!!task.readOnly;
+  ui.retryVariantButton.classList.toggle("hidden", task.readOnly || variant?.status !== "error");
+  ui.saveStatus.textContent = task.readOnly ? "历史记录 · 只读" : variant?.articleHtml ? "文字可直接编辑" : "暂无可编辑内容";
   renderAddModelOptions();
+  if(task.readOnly){
+    ui.addModelPanel.classList.add("hidden");
+    ui.systemDetails.innerHTML=`<div class="system-row"><span>历史模型版本</span><p>${escapeHtml(variants.map(v=>v.modelName).join("、"))}</p></div><p class="helper">历史成稿与原图完整保留，只读展示。原始资料、随笔和私人修改记录未公开。</p>`;
+    ui.commentList.innerHTML='<p class="helper">历史文章保留展示，可切换模型版本查看。新建任务后可体验创作与修改。</p>';ui.commentCount.textContent='—';selectedText="";renderSelection();return;
+  }
   const sourceLocation = task.sourceDocUrl || task.dingDocUrl || "";
   const sourceLabel = task.sourceDocTitle || task.dingDocTitle || sourceLocation;
   const sourceLink = /^https:\/\//i.test(sourceLocation)
