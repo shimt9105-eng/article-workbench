@@ -176,7 +176,7 @@ input:focus, textarea:focus, select:focus { border-color: var(--accent); box-sha
 #newTaskForm .essay-field { flex: 1; min-height: 80px; display: flex; flex-direction: column; }
 #essayInput { flex: 1; min-height: 56px; height: 100%; resize: none; }
 #newTaskForm > button[type="submit"] { flex: 0 0 auto; min-height: 40px; margin-top: 2px; }
-@media (min-width:851px) { .context-pane:has(#newTaskPanel:not(.hidden)) { overflow: hidden; } }
+@media (min-width:851px) { .app-shell[data-step="write"] .context-pane:has(#newTaskPanel:not(.hidden)) { overflow: hidden; } }
 @media (min-width:851px) and (max-height:650px) {
   #newTaskPanel { padding: 12px 14px; }
   #newTaskPanel > .panel-title { margin-bottom: 8px; }
