@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="referrer" content="no-referrer">
+  <title>文章工作台</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <section id="authPanel" class="auth-screen"><form id="authForm" class="auth-card"><div class="brand-mark">编</div><h1>让想法变成好文章</h1><p>搜索对标，由 AI 推荐；保留你的观点，写成公众号文章。</p><label>工作台用户名<input id="username" required autocomplete="username" pattern="[a-zA-Z0-9_-]{3,32}" placeholder="3–32 位字母、数字、_ 或 -"></label><label>工作台密码<input id="password" type="password" required minlength="12" maxlength="128" autocomplete="current-password" placeholder="至少 12 个字符"></label><p id="authError" class="error" role="alert"></p><button id="authSubmit" class="primary wide">登录</button><button id="authToggle" type="button" class="text-button">第一次使用？注册账号</button><small>这是文章工作台的登录账号，不是公众号账号密码。公众号绑定使用 AppID + AppSecret。每个账号独立保存文章与绑定，每日共享额度 30 次。</small></form></section>
+  <nav id="workflowNav" class="workflow-nav hidden" aria-label="文章创作步骤"><div class="workflow-tabs" role="tablist"><button id="researchTab" type="button" role="tab" aria-controls="researchPanel" data-step="research">01 <span>找对标</span></button><button id="writeTab" type="button" role="tab" aria-controls="workspace" data-step="write">02 <span>开始创作</span></button><button id="feedbackTab" type="button" role="tab" aria-controls="commentsPanel" data-step="feedback">03 <span>提意见</span></button></div><span class="workflow-hint">真实资料 · 独立版本 · 公众号草稿</span></nav>
+  <main class="app-shell hidden" id="workspace" data-step="write">
+    <aside class="task-pane">
+      <div class="brand">
+        <div class="brand-mark">编</div>
+        <div><strong>编辑2号</strong><span>文章工作台</span></div>
+      </div>
+      <button id="newTaskButton" class="primary wide">＋ 新建文章任务</button>
+      <div class="connection-actions"><span id="accountLabel"></span><button id="settingsButton" class="secondary wide">连接设置 / 绑定公众号</button><button id="draftRecordsButton" class="text-button">草稿发送记录</button><button id="logoutButton" class="text-button">退出登录</button></div><div class="pane-label">文章任务</div>
+      <nav id="taskList" class="task-list"></nav>
+    </aside>
+
+    <section class="editor-pane">
+      <header class="editor-header">
+        <div>
+          <h1 id="articleTitle">新文章</h1>
+          <div id="articleMeta" class="meta">填写右侧 System 后生成初稿</div>
+          <div id="variantSwitcher" class="variant-switcher hidden"></div>
+        </div>
+        <div class="header-actions">
+          <span id="saveStatus" class="save-status">文字可直接编辑</span>
+          <button id="retryVariantButton" class="secondary hidden" type="button">重试失败模型</button>
+          <button id="publishButton" class="secondary" disabled>发送到公众号草稿箱</button>
+        </div>
+      </header>
+      <div class="editor-stage">
+        <iframe id="articlePreview" class="article-preview" title="公众号文章网页预览" sandbox="allow-same-origin"></iframe>
+      </div>
+    </section>
+
+    <aside class="context-pane">
+      <section id="researchPanel" class="panel"><div class="panel-title"><span>01 · 编辑1号 · 找对标</span></div><form id="researchForm"><label>搜索主题<input id="keywordInput" required maxlength="100" placeholder="例如：电商 AI Agent"></label><label>我的写作方向<textarea id="researchGoal" rows="2" maxlength="2000" placeholder="面向谁、想表达什么观点？"></textarea></label><label>推荐模型<select id="recommendModel" required><option value="">请选择来源 / 模型</option></select></label><button class="primary wide" id="researchSubmit">搜索并推荐 3 篇</button></form><p id="researchStatus" class="helper" role="status"></p><button id="recommendRetry" class="secondary hidden">重新推荐，保留搜索结果</button><div id="recommendations"></div><details id="allResults" class="hidden"><summary>查看全部搜索结果</summary><div id="searchResults"></div></details></section>
+      <section id="newTaskPanel" class="panel">
+        <div class="panel-title"><span>02 · 编辑2号 · 写文章</span><span class="badge">System 锁定</span></div>
+        <form id="newTaskForm">
+          <div class="model-field"><span>写作模型（可多选）</span><div id="modelOptions" class="model-options"><div class="model-loading">正在读取已启用模型…</div></div></div>
+          <label>资料来源链接（可选）<input id="sourceDocInput" type="url" placeholder="保留文档来源，用正文参与生成"></label><label>资料正文<textarea id="sourceContent" rows="5" required minlength="20" placeholder="粘贴资料正文，至少 20 字；真实事实与产品边界"></textarea></label><label class="upload-label">或上传 Word（.docx，最多 8MB）<input id="sourceFile" type="file" accept=".docx"></label><button id="clearUpload" type="button" class="text-button hidden">清除上传，改为粘贴</button><p id="sourceFileStatus" class="helper" role="status"></p>
+          <label>对标文章链接<input id="benchmarkInput" type="url" required placeholder="从编辑1号选入，或粘贴原文链接"></label><label>对标全文（无法自动读取时填写）<textarea id="benchmarkContent" rows="4" placeholder="微信限制读取时，打开原文复制完整正文；标题和摘要不能替代全文"></textarea></label><p id="benchmarkStatus" class="helper" role="status"></p>
+          <label>我的随笔 / 初步想法<textarea id="essayInput" required rows="10" placeholder="写下真实经历、初步观点和你不想丢掉的表达……"></textarea></label>
+          <p class="lock-note">生成初稿后，这三项内容将固定为该任务的长期依据。</p>
+          <button type="submit" class="primary wide">锁定 System 并生成初稿</button>
+        </form>
+      </section>
+
+      <section id="lockedSystemPanel" class="panel hidden">
+        <div class="panel-title"><span>System</span><div class="panel-title-actions"><button id="addModelButton" type="button" class="inline-action">＋ 添加模型</button><span class="badge locked">已锁定</span></div></div>
+        <div id="addModelPanel" class="add-model-panel hidden">
+          <div class="add-model-head"><strong>追加写作模型</strong><span>使用当前锁定的 System 生成</span></div>
+          <div id="addModelOptions" class="model-options"><div class="model-loading">正在读取已启用模型…</div></div>
+          <div class="add-model-actions"><button id="cancelAddModelButton" type="button" class="secondary">取消</button><button id="confirmAddModelButton" type="button" class="primary">开始生成</button></div>
+        </div>
+        <div id="systemDetails" class="system-details"></div>
+      </section>
+
+      <div id="feedbackEmpty" class="panel hidden"><h2>先完成一篇文章</h2><p class="helper">在“开始创作”选择模型并生成初稿后，即可在这里选中文字、提交意见并更新全文。</p></div><section id="commentsPanel" class="comments-panel hidden">
+        <div class="panel-title"><span>意见</span><span id="commentCount" class="count">0</span></div>
+        <div id="commentList" class="comment-list"></div>
+        <div class="composer-wrap">
+          <div id="selectionChip" class="selection-chip hidden">
+            <div><span>已引用文章文本</span><button id="clearSelectionButton" type="button" aria-label="移除引用">×</button></div>
+            <blockquote id="selectionPreview"></blockquote>
+          </div>
+          <textarea id="commentInput" rows="4" placeholder="添加意见，或先在文章中选择一段文字…"></textarea>
+          <button id="sendCommentButton" class="primary wide">发送并更新全文</button>
+        </div>
+      </section>
+    </aside>
+  </main>
+
+  <div id="busyOverlay" class="busy-overlay hidden">
+    <div class="busy-card"><div class="spinner"></div><strong id="busyTitle">正在处理</strong><span id="busyDetail">请稍候…</span></div>
+  </div>
+  <div id="publishDialog" class="dialog-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="publishDialogTitle">
+    <section class="dialog-card">
+      <div class="dialog-head">
+        <div><h2 id="publishDialogTitle">选择要发送的模型结果</h2><p>每个结果将分别进入公众号草稿箱</p></div>
+        <button id="closePublishButton" type="button" class="dialog-close" aria-label="关闭">×</button>
+      </div>
+      <div id="publishModelOptions" class="publish-model-options"></div>
+      <p class="publish-note">确认后会读取模型 key 表中已启用的“类型=生图模型”记录，为每篇所选文章分别生成一张“主题图片＋文章标题”封面。</p>
+      <div class="dialog-actions"><button id="cancelPublishButton" type="button" class="secondary">取消</button><button id="confirmPublishButton" type="button" class="primary">生成封面并发送</button></div>
+    </section>
+  </div>
+  <div id="settingsDialog" class="dialog-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="settingsTitle"><section class="dialog-card"><div class="dialog-head"><h2 id="settingsTitle">连接设置 / 绑定公众号</h2><button type="button" class="dialog-close" id="closeSettings" aria-label="关闭">×</button></div><p id="connectionStatus" class="helper"></p><section class="binding-guide"><h3>使用 AppID + AppSecret 绑定发布接口</h3><p class="helper">不需要填写公众号登录账号或密码。当前仅支持保存草稿，正式发布由你在微信后台完成。</p><ol><li>使用管理员账号打开<a href="https://mp.weixin.qq.com/" target="_blank" rel="noopener noreferrer">微信公众平台</a>，进入开发相关设置，查看 AppID 和 AppSecret。</li><li>确认账号具有草稿箱、永久素材和图片上传接口权限。接口权限不足时无法写入草稿。</li><li>将服务器出口 IP 加入公众号 IP 白名单。点击下方验证后，若微信提示 40164，这里会显示需要加入的 IP。</li><li>填写下方资料，点击“验证并绑定”。凭据加密保存到你的账号，不返回浏览器、不进入 GitHub。</li><li>选择文章版本，生成封面后发送到草稿箱；在微信后台检查排版，再自行发布。</li></ol></section><form id="bindForm"><label>公众号名称<input id="wxName" required maxlength="60" placeholder="仅用于识别你绑定的账号"></label><label>AppID<input id="wxAppId" required autocomplete="off" placeholder="wx..."></label><label>AppSecret<input id="wxSecret" type="password" required autocomplete="off" placeholder="只在绑定时提交"></label><label>默认作者（可选）<input id="wxAuthor" maxlength="32"></label><p id="bindStatus" class="helper" role="status"></p><button id="bindSubmit" class="primary wide">验证并绑定</button><button id="unbindButton" class="text-button hidden" type="button">解除当前公众号绑定</button></form><details><summary>更换我的 API 配置（可选）</summary><p class="helper">默认使用共享配置，额度 30 次 / 日。可单独配置自己的搜索 Key 或增加自用模型。</p><form id="apiConfigForm"><label>TikHub API Key<input id="tikhubKey" type="password" autocomplete="off" placeholder="留空保留当前配置"></label><label>模型来源<input id="modelSource" placeholder="例如：我的服务商"></label><label>模型名称<input id="modelName" placeholder="服务商提供的真实模型 ID"></label><label>服务商 Base URL<input id="modelUrl" type="url" placeholder="https://.../v1"></label><label>模型协议<select id="modelProtocol"><option>OpenAI Chat</option><option>OpenAI Responses</option><option>Anthropic Messages</option></select></label><label>模型类型<select id="modelType"><option>文字模型</option><option>生图模型</option></select></label><label>模型 API Key<input id="modelKey" type="password" autocomplete="off"></label><p class="helper">首次添加自用模型后，写作模型列表改为你自己的配置；填写完整后保存。共享配置不受影响。</p><button class="secondary wide">保存我的配置</button></form></details></section></div>
+  <div id="recordsDialog" class="dialog-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="recordsTitle"><section class="dialog-card"><div class="dialog-head"><h2 id="recordsTitle">草稿发送记录</h2><button id="closeRecords" class="dialog-close" aria-label="关闭">×</button></div><div id="draftRecords"></div><a href="https://mp.weixin.qq.com/" target="_blank" rel="noopener noreferrer">打开微信公众平台草稿箱</a></section></div>
+  <div id="toast" class="toast hidden"></div>
+  <script src="config.js"></script>
+  <script src="web-api.js"></script>
+  <script src="app.js"></script>
+  <script src="experience.js"></script>
+</body>
+</html>

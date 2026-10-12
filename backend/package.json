@@ -1,0 +1,8 @@
+{
+  "name": "article-workbench-api",
+  "version": "2.0.0",
+  "private": true,
+  "main": "server.js",
+  "scripts": {"start": "node server.js"},
+  "dependencies": {"@cloudbase/node-sdk": "^3.16.0", "cheerio": "1.0.0", "mammoth": "^1.11.0", "sanitize-html": "^2.17.0", "sharp": "^0.34.0"}
+}
