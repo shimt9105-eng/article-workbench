@@ -38,7 +38,7 @@ el('researchForm').onsubmit=async e=>{
   e.preventDefault();if(researchBusy)return;if(!el('recommendModel').value){toast('请先选择推荐模型');return;}
   researchBusy=true;buttonBusy('researchSubmit',true,'正在搜索…');el('recommendRetry').disabled=true;el('recommendations').replaceChildren();el('allResults').classList.add('hidden');search=null;
   try{
-    message('researchStatus','正在搜索微信公众号文章…');search=await webApi('/research/search',{keyword:el('keywordInput').value});
+    await window.checkTrialCalls(2);message('researchStatus','正在搜索微信公众号文章…');search=await webApi('/research/search',{keyword:el('keywordInput').value});
     el('searchResults').innerHTML=search.articles.map((a,n)=>articleCard(a,n)).join('');el('allResults').classList.toggle('hidden',!search.articles.length);
     if(!search.articles.length){message('researchStatus','没有找到文章。换一个更具体的关键词试试。');el('recommendRetry').classList.add('hidden');return;}
     await recommendSearch();

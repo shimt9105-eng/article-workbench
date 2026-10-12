@@ -15,12 +15,14 @@ window.webApi=async function(path,payload={}){
   return data;
 };
 const api=window.webApi;
+window.checkTrialCalls=async calls=>{const q=await api('/quota');if(q.remaining!==undefined&&q.remaining<calls)throw new Error(`只剩 ${q.remaining} 次体验额度，本次需要 ${calls} 次，请减少模型数量或查看历史文章`);};
 function saveSelection(){sessionStorage.setItem('articleSelections',JSON.stringify(selections));}
 function mergeSelection(s){s.activeTaskId=selections.taskId||s.activeTaskId;for(const t of s.tasks)t.activeModelId=selections[t.id]||t.activeModelId;currentState=s;return s;}
 async function getState(){const [s,history]=await Promise.all([api('/state'),historyReady]);s.tasks=[...s.tasks,...structuredClone(history)];if(!s.activeTaskId)s.activeTaskId=history[0]?.id||null;return mergeSelection(s);}
 function writable(taskId){if(currentState?.tasks.find(t=>t.id===taskId)?.readOnly)throw new Error('历史文章为只读展示，请新建自己的任务');}
 async function runVariants(taskId,modelIds,instruction,selectedText){
   writable(taskId);
+  await window.checkTrialCalls(modelIds.length);
   const results=await Promise.allSettled(modelIds.map(modelId=>api('/variant/generate',{taskId,modelId,instruction,selectedText})));
   const s=await getState();
   if(results.every(r=>r.status==='rejected'))throw new Error(results.map(r=>r.reason.message).join('；'));
@@ -33,12 +35,13 @@ window.editor2={
   selectTask:async taskId=>{selections.taskId=taskId;saveSelection();return getState();},
   selectVariant:async(taskId,modelId)=>{selections.taskId=taskId;selections[taskId]=modelId;saveSelection();return getState();},
   createTask:async p=>{
+    await window.checkTrialCalls(p.modelIds.length);
     const doc=uploadedDocument||{sourceDocContent:document.getElementById('sourceContent').value};
     const result=await api('/task/create',{...p,...doc,benchmarkContent:document.getElementById('benchmarkContent').value});
     selections.taskId=result.taskId;saveSelection();
     try{return await runVariants(result.taskId,p.modelIds);}catch(e){window.dispatchEvent(new Event('taskCreated'));throw e;}
   },
-  addModels:async p=>{writable(p.taskId);await api('/task/add-models',p);return runVariants(p.taskId,p.modelIds);},
+  addModels:async p=>{writable(p.taskId);await window.checkTrialCalls(p.modelIds.length);await api('/task/add-models',p);return runVariants(p.taskId,p.modelIds);},
   retryVariant:p=>runVariants(p.taskId,[p.modelId]),
   sendComment:p=>runVariants(p.taskId,[p.modelId],p.instruction,p.selectedText),
   updateArticleText:async p=>{
@@ -48,6 +51,7 @@ window.editor2={
   },
   publishArticles:async p=>{
     writable(p.taskId);
+    await window.checkTrialCalls(p.modelIds.length);
     const results=[];let coverModel='生图模型';
     for(const modelId of p.modelIds){try{const result=await api('/article/publish',{taskId:p.taskId,modelId});coverModel=result.coverModel||coverModel;results.push(result);}catch(e){results.push({status:'failed',model_name:currentState.tasks.find(t=>t.id===p.taskId)?.variants.find(v=>v.modelId===modelId)?.modelName||modelId,error:e.message});}}
     return {results,coverModel,coverCount:results.filter(r=>r.status==='success').length};
