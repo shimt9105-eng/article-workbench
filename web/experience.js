@@ -40,7 +40,7 @@ el('researchForm').onsubmit=async e=>{
   try{
     await window.checkTrialCalls(2);message('researchStatus','正在搜索微信公众号文章…');search=await webApi('/research/search',{keyword:el('keywordInput').value});
     el('searchResults').innerHTML=search.articles.map((a,n)=>articleCard(a,n)).join('');el('allResults').classList.toggle('hidden',!search.articles.length);
-    if(!search.articles.length){message('researchStatus','没有找到文章。换一个更具体的关键词试试。');el('recommendRetry').classList.add('hidden');return;}
+    if(!search.articles.length){message('researchStatus','搜索服务本次返回 0 篇文章，尚未调用 AI 推荐。可尝试减少关键词或稍后重试。');el('recommendRetry').classList.add('hidden');return;}
     await recommendSearch();
   }catch(error){message('researchStatus',error.message);if(search?.articles.length)el('recommendRetry').classList.remove('hidden');}
   finally{researchBusy=false;buttonBusy('researchSubmit',false,'搜索并推荐 3 篇');el('recommendRetry').disabled=false;}

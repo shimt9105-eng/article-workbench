@@ -3,10 +3,18 @@ const {modelResponseText}=require('./model');
 function normalize(items) {
   const seen=new Set();
   return items.map(i=>{
-    const tags=i.source?.tag||[], label=tags.find(t=>/阅读/.test(t.title||''))?.title||'未提供';
+    if(!i||typeof i!=='object')return {};
+    const tags=Array.isArray(i.source?.tag)?i.source.tag:[], label=String(tags.find(t=>/阅读/.test(t?.title||''))?.title||'未提供');
     const m=label.match(/阅读\s*([\d,.]+)\s*([万亿]?)/);
-    return {url:i.doc_url,title:stripTags(i.title),summary:stripTags(i.desc),account:stripTags(i.source?.title),readCount:m?Number(m[1].replaceAll(',',''))*({'':1,'万':10000,'亿':100000000}[m[2]]):0,readCountText:label,publishedText:i.source?.dateTime||''};
-  }).filter(i=>{try {const u=new URL(i.url); if(u.protocol!=='https:'||u.hostname!=='mp.weixin.qq.com'||!i.title||seen.has(i.url))return false;seen.add(i.url);return true;}catch{return false;}}).sort((a,b)=>b.readCount-a.readCount).map((i,n)=>({...i,id:String(n+1)}));
+    return {url:String(i.doc_url||'').trim(),title:stripTags(i.title),summary:stripTags(i.desc),account:stripTags(i.source?.title),readCount:m?Number(m[1].replaceAll(',',''))*({'':1,'万':10000,'亿':100000000}[m[2]]):0,readCountText:label,publishedText:i.source?.dateTime||''};
+  }).filter(i=>{try {const u=new URL(i.url); if(!['http:','https:'].includes(u.protocol)||u.hostname!=='mp.weixin.qq.com'||u.username||u.password||u.port||!i.title)return false;u.protocol='https:';i.url=u.href;if(seen.has(i.url))return false;seen.add(i.url);return true;}catch{return false;}}).sort((a,b)=>b.readCount-a.readCount).map((i,n)=>({...i,id:String(n+1)}));
+}
+function parseSearchResponse(result){
+  if(result?.code!==200)throw new Error('搜索服务返回失败，请检查账户额度或稍后重试');
+  if(!Array.isArray(result.data?.items))throw new Error('搜索服务返回的数据格式异常，无法读取文章；请稍后重试');
+  const items=result.data.items,articles=normalize(items).slice(0,50);
+  if(items.length&&!articles.length)throw new Error('搜索服务已返回结果，但未识别到有效的公众号文章链接；请稍后重试');
+  return {articles,returnedCount:items.length,hasMore:!!result.data.continue_flag};
 }
 function validateRecommendations(value, articles) {
   const expected=Math.min(3,articles.length), selected=value.recommendations;
@@ -31,4 +39,4 @@ async function recommend(model, keyword, goal, articles) {
   if(!r.ok)throw new Error(`AI 推荐失败（HTTP ${r.status}）；搜索结果已保留，可以更换模型重试`);
   return validateRecommendations(extractJsonObject(modelResponseText(await r.json(),model.protocol)),articles);
 }
-module.exports={normalize,recommend,validateRecommendations};
+module.exports={normalize,parseSearchResponse,recommend,validateRecommendations};

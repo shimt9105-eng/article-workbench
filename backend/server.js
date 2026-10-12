@@ -9,7 +9,7 @@ const {digest,same,passwordHash,encrypt,decrypt,download,safeUrl}=require('./sec
 const {systemPrompt,buildModelInput,buildCoverPrompt,buildDraftArticles,sanitizeHtml,stripTags,nowIso,formatTaskTimestamp}=require('./core');
 const {callModel}=require('./model');
 const {placeSourceImages}=require('./source-images');
-const {normalize,recommend}=require('./research');
+const {parseSearchResponse,recommend}=require('./research');
 const VERSION='2.1.0', INITIAL='根据固定 System 依据，把原始随笔润色成一篇完整的微信公众号文章。保留真实观点与个人表达，不虚构信息。';
 const PREFIX='article_web_', KEY=process.env.ENCRYPTION_KEY||'', SIGN=process.env.SESSION_SECRET||'';
 const app=cloudbase.init({env:process.env.CLOUDBASE_ENV_ID||cloudbase.SYMBOL_CURRENT_ENV,...(process.env.CLOUDBASE_APIKEY?{accessKey:process.env.CLOUDBASE_APIKEY}:{})});
@@ -252,8 +252,9 @@ async function route(req,p,path){
     const keyword=String(p.keyword||'').trim().slice(0,100);if(!keyword)throw new UserError('请输入搜索主题');
     const c=await config(user);if(!c.tikhub)throw new UserError('请在连接设置中配置 TikHub API Key');await usage(user);
       const r=await fetch('https://api.tikhub.io/api/v1/wechat_search/v2/fetch_search',{method:'POST',headers:{Authorization:`Bearer ${c.tikhub}`,'Content-Type':'application/json'},body:JSON.stringify({keyword,business_type:'article',sort:'hot',publish_time:'all',offset:0,cursor:null,raw:false}),signal:AbortSignal.timeout(50000)});
-    if(!r.ok)throw new UserError(`搜索服务失败（HTTP ${r.status}），请检查搜索 Key`,502);const result=await r.json();if(result.code!==200)throw new UserError('搜索服务返回失败，请检查账户额度或更换关键词',502);
-    const id=uid(),articles=normalize(result.data?.items||[]).slice(0,50);await add('searches',id,{user,keyword,articles,createdAt:nowIso()});return {id,keyword,articles,hasMore:!!result.data?.continue_flag};
+    if(!r.ok)throw new UserError(`搜索服务失败（HTTP ${r.status}），请检查搜索 Key`,502);let result;try{result=await r.json();}catch{throw new UserError('搜索服务返回的数据格式异常，请稍后重试',502);}
+    let parsed;try{parsed=parseSearchResponse(result);}catch(e){throw new UserError(e.message,502);}
+    const id=uid();await add('searches',id,{user,keyword,...parsed,createdAt:nowIso()});return {id,keyword,...parsed};
   }
   if(path==='/research/recommend'){
     const s=await get('searches',p.searchId);if(!s||s.user!==user)throw new UserError('搜索结果不存在',404);
