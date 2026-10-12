@@ -1,5 +1,5 @@
 const el=id=>document.getElementById(id);
-let search=null,recommendations=[],researchBusy=false;
+let search=null,recommendations=[],researchBusy=false,sourceUploadAttempt=0;
 function message(id,value){el(id).textContent=value;}
 function buttonBusy(id,busy,label){el(id).disabled=busy;if(label)el(id).textContent=label;}
 function fillRecommendModels(){const select=el('recommendModel'),value=select.value;select.replaceChildren(new Option('请选择来源 / 模型',''));for(const m of availableModels)select.add(new Option(`${m.source} / ${m.name}`,m.id));select.value=value;}
@@ -48,17 +48,21 @@ el('researchForm').onsubmit=async e=>{
 el('recommendRetry').onclick=async()=>{if(!search||researchBusy)return;researchBusy=true;buttonBusy('recommendRetry',true);try{await recommendSearch();}catch(e){message('researchStatus',e.message);}finally{researchBusy=false;buttonBusy('recommendRetry',false);}};
 el('researchPanel').addEventListener('click',async e=>{
   const button=e.target.closest('[data-article-id]');if(!button||!search)return;const a=search.articles.find(a=>a.id===button.dataset.articleId);if(!a)return;
-  creating=true;render();window.setWorkflowStep('write');el('benchmarkInput').value=a.url;el('benchmarkContent').value='';message('benchmarkStatus',`已选入《${a.title}》，正在读取全文…`);button.disabled=true;
-  try{const r=await webApi('/benchmark/read',{benchmarkUrl:a.url});el('benchmarkContent').value=r.benchmarkContent;message('benchmarkStatus',`已读取全文 ${r.benchmarkContent.length} 字，生成前可以核对。`);}catch(error){message('benchmarkStatus',error.message);}finally{button.disabled=false;el('benchmarkInput').scrollIntoView({behavior:'smooth',block:'center'});}
+  creating=true;render();window.setWorkflowStep('write');el('benchmarkInput').value=a.url;window.setBenchmarkDocument(null);message('benchmarkStatus',`已选入《${a.title}》，正在读取全文…`);button.disabled=true;
+  try{const r=await webApi('/benchmark/read',{benchmarkUrl:a.url});if(el('benchmarkInput').value===a.url){window.setBenchmarkDocument(r,a.url);message('benchmarkStatus',`已读取全文 ${r.benchmarkContent.length} 字，生成时将自动使用。`);}}catch(error){if(el('benchmarkInput').value===a.url)message('benchmarkStatus',error.message);}finally{button.disabled=false;el('benchmarkInput').scrollIntoView({behavior:'smooth',block:'center'});}
 });
+el('benchmarkInput').addEventListener('input',()=>{window.setBenchmarkDocument(null);message('benchmarkStatus','生成时会自动读取对标全文。');});
 el('sourceFile').onchange=async()=>{
-  const f=el('sourceFile').files?.[0];if(!f)return;if(f.size>8*1024*1024){message('sourceFileStatus','文件超过 8MB，请缩减后重试');return;}
+  const f=el('sourceFile').files?.[0];if(!f)return;const attempt=++sourceUploadAttempt;window.setUploadedDocument(null);window.wordUploadError='';el('clearUpload').classList.remove('hidden');
+  if(f.size>8*1024*1024){window.wordUploadBusy=false;window.wordUploadError='文件超过 8MB，请缩减后重试';message('sourceFileStatus',window.wordUploadError);return;}
+  window.wordUploadBusy=true;
   message('sourceFileStatus','正在读取 Word 正文和全部内嵌图片…');
   try{const data=await new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(String(r.result).split(',')[1]);r.onerror=reject;r.readAsDataURL(f);});
-    const parsed=await webApi('/document/read',{docxBase64:data,docxName:f.name});window.setUploadedDocument(parsed);el('sourceContent').value=parsed.sourceDocContent;el('sourceContent').readOnly=true;message('sourceFileStatus',`${f.name} · ${parsed.sourceDocContent.length} 字 · ${parsed.sourceDocImageCount} 张图片。清除上传可改为粘贴资料。`);el('clearUpload').classList.remove('hidden');
-  }catch(e){message('sourceFileStatus',e.message);}
+    const parsed=await webApi('/document/read',{docxBase64:data,docxName:f.name});if(attempt!==sourceUploadAttempt)return;window.setUploadedDocument(parsed);message('sourceFileStatus',`${f.name} · ${parsed.sourceDocContent.length} 字 · ${parsed.sourceDocImageCount} 张图片。已保留正文和内嵌图片。`);el('clearUpload').classList.remove('hidden');
+  }catch(e){if(attempt===sourceUploadAttempt){window.wordUploadError=e.message;message('sourceFileStatus',e.message);}}
+  finally{if(attempt===sourceUploadAttempt)window.wordUploadBusy=false;}
 };
-el('clearUpload').onclick=()=>{window.clearUploadedDocument();el('sourceFile').value='';el('sourceContent').readOnly=false;el('sourceContent').value='';el('clearUpload').classList.add('hidden');};
+el('clearUpload').onclick=()=>{sourceUploadAttempt++;window.clearUploadedDocument();};
 el('bindForm').onsubmit=async e=>{
   e.preventDefault();buttonBusy('bindSubmit',true,'正在验证…');message('bindStatus','验证公众号接口及 IP 白名单…');
   try{const r=await webApi('/wechat/bind',{name:el('wxName').value,appId:el('wxAppId').value.trim(),appSecret:el('wxSecret').value.trim(),author:el('wxAuthor').value});el('wxSecret').value='';message('bindStatus',`已验证并绑定 ${r.name}。可以发送草稿了。`);await connection();

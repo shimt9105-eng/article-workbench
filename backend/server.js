@@ -10,7 +10,7 @@ const {systemPrompt,buildModelInput,buildCoverPrompt,buildDraftArticles,sanitize
 const {callModel}=require('./model');
 const {placeSourceImages}=require('./source-images');
 const {parseSearchResponse,recommend}=require('./research');
-const VERSION='2.1.0', INITIAL='根据固定 System 依据，把原始随笔润色成一篇完整的微信公众号文章。保留真实观点与个人表达，不虚构信息。';
+const VERSION='2.1.1', INITIAL='根据固定 System 依据，把原始随笔润色成一篇完整的微信公众号文章。保留真实观点与个人表达，不虚构信息。';
 const PREFIX='article_web_', KEY=process.env.ENCRYPTION_KEY||'', SIGN=process.env.SESSION_SECRET||'';
 const app=cloudbase.init({env:process.env.CLOUDBASE_ENV_ID||cloudbase.SYMBOL_CURRENT_ENV,...(process.env.CLOUDBASE_APIKEY?{accessKey:process.env.CLOUDBASE_APIKEY}:{})});
 const db=app.database();
@@ -88,12 +88,13 @@ async function imageData(src){
 }
 async function documentInput(p){
   let content=String(p.sourceDocContent||'').trim(),html=String(p.sourceDocHtml||'');
+  if(!p.docxBase64&&!content&&!html)return {sourceDocContent:'',sourceDocHtml:'',sourceImages:[],sourceDocImageCount:0,sourceDocTitle:'未上传 Word',sourceDocUrl:'',sourceDocWarnings:[]};
   if(p.docxBase64){
     const buffer=Buffer.from(p.docxBase64,'base64');if(buffer.length>8*1024*1024)throw new UserError('Word 文件不得超过 8MB');
-    const result=await mammoth.convertToHtml({buffer},{convertImage:mammoth.images.imgElement(async image=>({src:`data:${image.contentType};base64,${await image.read('base64')}`}))});
+    let result;try{result=await mammoth.convertToHtml({buffer},{convertImage:mammoth.images.imgElement(async image=>({src:`data:${image.contentType};base64,${await image.read('base64')}`}))});}catch{throw new UserError('无法读取 Word，请上传有效的 .docx 文件');}
     html=safeHtml(result.value);content=stripTags(html);
   }
-  if(!content||content.length<20)throw new UserError('请粘贴至少 20 字资料正文，或上传 .docx。网页不能访问电脑文件路径，私有文档请粘贴内容');
+  if(!content&&!/<img\b/i.test(html))throw new UserError('Word 中没有可用正文或图片，请更换文件或移除上传后继续');
   if(content.length>120000)throw new UserError('资料正文过长，请缩减到 12 万字以内');
   const $=cheerio.load(html||'<p></p>'),images=[];
   $('img').each((n,el)=>{const src=$(el).attr('src');if(src){const id=`资料图片 ${n+1}`;images.push({id,src,alt:$(el).attr('alt')||id,beforeText:$(el).parent().prev().text(),afterText:$(el).parent().next().text()});$(el).replaceWith(`[${id}]`);}});
@@ -102,10 +103,10 @@ async function documentInput(p){
 }
 async function benchmarkInput(p){
   if(p.benchmarkContent){const text=String(p.benchmarkContent).trim();if(text.length<100)throw new UserError('对标正文至少需要 100 字');return {benchmarkContent:text.slice(0,120000),benchmarkTitle:p.benchmarkTitle||'用户提供的对标全文',benchmarkSource:'user_pasted'};}
-  const u=new URL(p.benchmarkUrl);if(u.hostname!=='mp.weixin.qq.com'||u.protocol!=='https:')throw new UserError('自动读取仅支持 HTTPS 微信文章链接；其他文章请粘贴全文');
-  const {buffer}=await download(u.toString(),4*1024*1024);const $=cheerio.load(buffer.toString('utf8'));
+  let u;try{u=new URL(p.benchmarkUrl);}catch{throw new UserError('请填写有效的对标文章链接');}if(u.hostname!=='mp.weixin.qq.com'||u.protocol!=='https:'||u.username||u.password)throw new UserError('对标文章请使用 HTTPS 微信文章链接');
+  let buffer;try{({buffer}=await download(u.toString(),4*1024*1024));}catch{throw new UserError('暂时无法读取对标文章，请稍后重试或更换链接；已填写内容会保留',502);}const $=cheerio.load(buffer.toString('utf8'));
   const el=$('#js_content');el.find('script,style').remove();const content=el.text().trim();
-  if(!el.length||content.length<100||/环境异常|访问过于频繁|内容已被发布者删除/.test($('body').text()))throw new UserError('未能取得对标全文，请打开原文并粘贴正文后再生成；不会使用摘要替代全文');
+  if(!el.length||content.length<100||/环境异常|访问过于频繁|内容已被发布者删除/.test($('body').text()))throw new UserError('微信暂未提供对标全文，请确认原文可访问，稍后重试或更换对标文章；已填写内容会保留');
   return {benchmarkContent:content.slice(0,120000),benchmarkTitle:$('#activity-name').text().trim()||$('meta[property="og:title"]').attr('content')||'对标文章',benchmarkSource:'full_text'};
 }
 async function generate(user,p){

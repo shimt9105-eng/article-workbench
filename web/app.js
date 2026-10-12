@@ -1,6 +1,6 @@
 const ui = Object.fromEntries([
   "newTaskButton", "taskList", "articleTitle", "articleMeta", "variantSwitcher", "saveStatus", "retryVariantButton", "publishButton", "articlePreview",
-  "newTaskPanel", "newTaskForm", "modelOptions", "sourceDocInput", "benchmarkInput", "essayInput",
+  "newTaskPanel", "newTaskForm", "modelOptions", "benchmarkInput", "essayInput",
   "lockedSystemPanel", "addModelButton", "addModelPanel", "addModelOptions", "cancelAddModelButton", "confirmAddModelButton",
   "systemDetails", "commentsPanel", "commentCount", "commentList", "selectionChip",
   "selectionPreview", "clearSelectionButton", "commentInput", "sendCommentButton", "busyOverlay", "busyTitle",
@@ -373,14 +373,16 @@ function renderActive() {
     : `<p>${escapeHtml(sourceLabel)}<br>${escapeHtml(sourceLocation)}</p>`;
   const sourceNote = task.sourceDocImageCount ? `<p>内嵌图片 ${task.sourceDocImageCount} 张</p>` : "";
   const sourceWarnings = (task.sourceDocWarnings || []).map((value) => `<p>${escapeHtml(value)}</p>`).join("");
+  const hasSource = !!(task.sourceDocHtml || task.sourceDocContent || task.dingDocContent || task.sourceImages?.length);
   ui.systemDetails.innerHTML = `
     <div class="system-row"><span>写作模型</span><p>${escapeHtml(variants.map((item) => item.modelName).join("、"))}</p></div>
     <div class="system-row"><span>资料文档</span>${sourceLink}${sourceNote}${sourceWarnings}</div>
-    <details class="source-preview"><summary>查看资料原文与图片</summary><iframe title="资料文档图文预览" sandbox="allow-same-origin"></iframe></details>
+    ${hasSource ? '<details class="source-preview"><summary>查看资料原文与图片</summary><iframe title="资料文档图文预览" sandbox="allow-same-origin"></iframe></details>' : ''}
     <div class="system-row"><span>对标文章</span><a href="${escapeHtml(task.benchmarkUrl)}">${escapeHtml(task.benchmarkTitle || task.benchmarkUrl)}</a></div>
     <div class="system-row"><span>原始随笔</span><p class="system-essay">${escapeHtml(task.originalEssay)}</p></div>`;
   const sourceBody = task.sourceDocHtml || `<p style="white-space:pre-wrap">${escapeHtml(task.sourceDocContent || task.dingDocContent || "")}</p>`;
-  ui.systemDetails.querySelector(".source-preview iframe").srcdoc = `<!doctype html><html><head><meta charset="utf-8"><style>body{font:14px/1.7 -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;color:#333;padding:12px;overflow-wrap:anywhere}img{max-width:100%;height:auto}table{border-collapse:collapse;max-width:100%}td,th{border:1px solid #ddd;padding:6px}</style></head><body>${sourceBody}</body></html>`;
+  const sourcePreview = ui.systemDetails.querySelector(".source-preview iframe");
+  if (sourcePreview) sourcePreview.srcdoc = `<!doctype html><html><head><meta charset="utf-8"><style>body{font:14px/1.7 -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;color:#333;padding:12px;overflow-wrap:anywhere}img{max-width:100%;height:auto}table{border-collapse:collapse;max-width:100%}td,th{border:1px solid #ddd;padding:6px}</style></head><body>${sourceBody}</body></html>`;
   renderComments(variant);
   selectedText = "";
   renderSelection();
@@ -465,7 +467,6 @@ ui.newTaskForm.addEventListener("submit", async (event) => {
   try {
     appState = await window.editor2.createTask({
       modelIds,
-      sourceDocUrl: ui.sourceDocInput.value,
       benchmarkUrl: ui.benchmarkInput.value,
       originalEssay: ui.essayInput.value,
     });

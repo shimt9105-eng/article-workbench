@@ -3,6 +3,9 @@ window.authReady=new Promise(resolve=>{resolveAuth=resolve;});
 window.completeLogin=resolveAuth;
 let currentState=null;
 let uploadedDocument=null;
+let benchmarkDocument=null;
+window.wordUploadBusy=false;
+window.wordUploadError='';
 const historyReady=fetch(new URL('history.json',location.href),{cache:'no-cache'}).then(r=>{if(!r.ok)throw new Error('历史文章暂时无法读取，请刷新');return r.json();}).then(s=>s.tasks||[]);
 
 let selections=JSON.parse(sessionStorage.getItem('articleSelections')||'{}');
@@ -28,16 +31,20 @@ async function runVariants(taskId,modelIds,instruction,selectedText){
   if(results.every(r=>r.status==='rejected'))throw new Error(results.map(r=>r.reason.message).join('；'));
   return s;
 }
-window.clearUploadedDocument=()=>{uploadedDocument=null;document.getElementById('sourceFileStatus').textContent='';document.getElementById('sourceContent').readOnly=false;document.getElementById('clearUpload').classList.add('hidden');document.getElementById('benchmarkStatus').textContent='';};
+window.clearUploadedDocument=()=>{uploadedDocument=null;window.wordUploadBusy=false;window.wordUploadError='';document.getElementById('sourceFile').value='';document.getElementById('sourceFileStatus').textContent='可以不上传，直接根据对标文章和你的随笔创作。';document.getElementById('clearUpload').classList.add('hidden');};
 window.setUploadedDocument=data=>{uploadedDocument=data;};
+window.setBenchmarkDocument=(data,url)=>{benchmarkDocument=data?{...data,url}:null;};
 window.editor2={
   getState,listModels:()=>api('/models'),
   selectTask:async taskId=>{selections.taskId=taskId;saveSelection();return getState();},
   selectVariant:async(taskId,modelId)=>{selections.taskId=taskId;selections[taskId]=modelId;saveSelection();return getState();},
   createTask:async p=>{
+    if(window.wordUploadBusy)throw new Error('Word 正在读取，请读取完成后再生成');
+    if(window.wordUploadError)throw new Error(window.wordUploadError+'；请更换 Word 或移除上传后继续');
     await window.checkTrialCalls(p.modelIds.length);
-    const doc=uploadedDocument||{sourceDocContent:document.getElementById('sourceContent').value};
-    const result=await api('/task/create',{...p,...doc,benchmarkContent:document.getElementById('benchmarkContent').value});
+    const doc=uploadedDocument||{};
+    const benchmark=benchmarkDocument?.url===p.benchmarkUrl?benchmarkDocument:{};
+    const result=await api('/task/create',{...p,...doc,benchmarkContent:benchmark.benchmarkContent||'',benchmarkTitle:benchmark.benchmarkTitle||''});
     selections.taskId=result.taskId;saveSelection();
     try{return await runVariants(result.taskId,p.modelIds);}catch(e){window.dispatchEvent(new Event('taskCreated'));throw e;}
   },

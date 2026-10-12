@@ -43,6 +43,16 @@ test('missing benchmark body fails; pasted full text succeeds',async()=>{
 test('upload keeps real Word text and all embedded images',async()=>{
   const r=await documentInput({sourceDocContent:'真实资料：我们提供真实产品功能，不承诺收益。',sourceDocHtml:'<p>真实资料这是足够长度的产品资料。</p><img src="data:image/png;base64,aGVsbG8="><p>图一说明</p><img src="https://example.com/2.png">'});assert.equal(r.sourceImages.length,2);assert(r.sourceDocContent.includes('[资料图片 1]'));assert(r.sourceDocContent.includes('[资料图片 2]'));
 });
+test('Word is optional while invalid uploads still fail explicitly',async()=>{
+  const empty=await documentInput({});
+  assert.equal(empty.sourceDocContent,'');assert.equal(empty.sourceDocHtml,'');assert.deepEqual(empty.sourceImages,[]);assert.equal(empty.sourceDocImageCount,0);
+  await assert.rejects(()=>documentInput({docxBase64:Buffer.from('not a Word document').toString('base64')}),/有效的 .docx/);
+  const short=await documentInput({sourceDocContent:'真实短资料',sourceDocHtml:'<p>真实短资料</p>'});assert.equal(short.sourceDocContent,'真实短资料');
+});
+test('invalid benchmark URLs give a readable error after removing the pasted-body field',async()=>{
+  await assert.rejects(()=>benchmarkInput({benchmarkUrl:''}),/有效的对标文章链接/);
+  await assert.rejects(()=>benchmarkInput({benchmarkUrl:'https://example.com/article'}),/HTTPS 微信文章链接/);
+});
 test('HTML rejects scripts, event handlers, unsafe links and styles',()=>{const out=safeHtml('<h1>文章</h1><img src="https://example.com/a.png" onerror="alert(1)"><p style="background:url(https://bad.test)">正文</p><script>alert(1)</script><a href="javascript:alert(1)">标题</a>');assert(!/script|onerror|url\(/i.test(out));});
 test('accounts cannot see or modify each other’s task or credentials',async()=>{
   const user=digest('qa_alice');await collection('article_web_tasks').add({_id:'test-task',user,title:'private',createdAt:'2026'});
@@ -93,4 +103,16 @@ test('source image placement retains desktop fallback and never duplicates exist
   assert.equal(fallback.warnings.length,1);
   const again=placeSourceImages(fallback.html,images);
   assert.equal((again.html.match(/<img /g)||[]).length,1);
+});
+test('an article can be generated without Word and retains its original essay and benchmark',async()=>{
+  const fullText='用于隔离验证的对标全文，只有用户实际提供的事实可以参与创作。'.repeat(10);
+  const essay='不上传 Word，根据我的观点写文章。';
+  const created=await route(req(alice),{modelIds:['qa-text'],benchmarkContent:fullText,benchmarkUrl:'https://mp.weixin.qq.com/s?optional-word=1',originalEssay:essay},'/task/create');
+  const previousFetch=global.fetch;let input;
+  global.fetch=async(url,options)=>{const body=JSON.parse(options.body);assert.equal(body.messages[0].content,require('../backend/core').systemPrompt());input=JSON.parse(body.messages[1].content);return {ok:true,text:async()=>JSON.stringify({choices:[{message:{content:JSON.stringify({html:'<h1>无需 Word 的文章</h1><p>依照实际观点创作。</p>',comment:'已完成'})}}]})};};
+  try{
+    await route(req(alice),{taskId:created.taskId,modelId:'qa-text'},'/variant/generate');
+    assert.equal(input.固定System依据.原始随笔,essay);assert.equal(input.固定System依据.对标文章正文,fullText);assert.equal(input.固定System依据.资料图片数量,0);assert(!input.固定System依据.资料文档正文);
+    const result=(await route(req(alice),{},'/state')).tasks.find(t=>t.id===created.taskId);assert.equal(result.sourceDocTitle,'未上传 Word');assert(result.variants[0].articleHtml.includes('无需 Word 的文章'));
+  }finally{global.fetch=previousFetch;}
 });

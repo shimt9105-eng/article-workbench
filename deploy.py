@@ -78,7 +78,7 @@ def main():
     with tempfile.TemporaryDirectory(prefix='article-workbench-deploy-') as directory:
         p=Path(directory)/'cloudbaserc.json';p.write_text(json.dumps(config,ensure_ascii=False));p.chmod(0o600)
         run([cli,'fn','deploy',NAME,'--force','--httpFn','--dir',str(SCRIPT/'backend'),'--install-dependency','true','--json'],directory)
-    public={'version':'2.1.0','envId':settings['CLOUDBASE_ENV_ID'],'api':settings['CLOUDBASE_SITE_URL']+'/'+NAME,'models':[{'source':m['source'],'name':m['name'],'type':m['type']} for m in models],'trialLimit':10,'trialScope':'visitor','globalDailyLimit':30}
+    public={'version':'2.1.1','envId':settings['CLOUDBASE_ENV_ID'],'api':settings['CLOUDBASE_SITE_URL']+'/'+NAME,'models':[{'source':m['source'],'name':m['name'],'type':m['type']} for m in models],'trialLimit':10,'trialScope':'visitor','globalDailyLimit':30}
     (SCRIPT.parent/'document'/'deployment.json').write_text(json.dumps(public,ensure_ascii=False,indent=2))
     print(json.dumps({'deployed':NAME,'modelCount':len(models),'api':public['api']},ensure_ascii=False))
 

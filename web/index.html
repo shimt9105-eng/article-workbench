@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="referrer" content="no-referrer">
   <title>文章工作台</title>
-  <link rel="stylesheet" href="styles.css?v=2.1.0-searchfix">
+  <link rel="stylesheet" href="styles.css?v=2.1.1-word-optional">
 </head>
 <body>
   <section id="authPanel" class="auth-screen"><div class="auth-card"><div class="brand-mark">编</div><h1>文章工作台</h1><p id="authError" role="status">正在进入免登录体验…</p><button id="guestRetry" class="secondary hidden">重新连接</button></div></section>
@@ -45,10 +45,10 @@
         <div class="panel-title"><span>02 · 编辑2号 · 写文章</span><span class="badge">System 锁定</span></div>
         <form id="newTaskForm">
           <div class="model-field"><span>写作模型（可多选）</span><div id="modelOptions" class="model-options"><div class="model-loading">正在读取已启用模型…</div></div></div>
-          <label>资料来源链接（可选）<input id="sourceDocInput" type="url" placeholder="保留文档来源，用正文参与生成"></label><label>资料正文<textarea id="sourceContent" rows="5" required minlength="20" placeholder="粘贴资料正文，至少 20 字；真实事实与产品边界"></textarea></label><label class="upload-label">或上传 Word（.docx，最多 8MB）<input id="sourceFile" type="file" accept=".docx"></label><button id="clearUpload" type="button" class="text-button hidden">清除上传，改为粘贴</button><p id="sourceFileStatus" class="helper" role="status"></p>
-          <label>对标文章链接<input id="benchmarkInput" type="url" required placeholder="从编辑1号选入，或粘贴原文链接"></label><label>对标全文（无法自动读取时填写）<textarea id="benchmarkContent" rows="4" placeholder="微信限制读取时，打开原文复制完整正文；标题和摘要不能替代全文"></textarea></label><p id="benchmarkStatus" class="helper" role="status"></p>
+          <label class="upload-label">上传 Word（可选，.docx，最多 8MB）<input id="sourceFile" type="file" accept=".docx"></label><button id="clearUpload" type="button" class="text-button hidden">移除 Word</button><p id="sourceFileStatus" class="helper" role="status">可以不上传，直接根据对标文章和你的随笔创作。</p>
+          <label>对标文章链接<input id="benchmarkInput" type="url" required placeholder="从编辑1号选入，或粘贴原文链接"></label><p id="benchmarkStatus" class="helper" role="status"></p>
           <label>我的随笔 / 初步想法<textarea id="essayInput" required rows="10" placeholder="写下真实经历、初步观点和你不想丢掉的表达……"></textarea></label>
-          <p class="lock-note">生成初稿后，这三项内容将固定为该任务的长期依据。</p>
+          <p class="lock-note">生成初稿后，对标文章、随笔及已上传的 Word 将固定为该任务的长期依据。</p>
           <button type="submit" class="primary wide">锁定 System 并生成初稿</button>
         </form>
       </section>
@@ -95,9 +95,9 @@
   <div id="settingsDialog" class="dialog-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="settingsTitle"><section class="dialog-card"><div class="dialog-head"><h2 id="settingsTitle">连接设置 / 绑定公众号</h2><button type="button" class="dialog-close" id="closeSettings" aria-label="关闭">×</button></div><p id="connectionStatus" class="helper"></p><section class="binding-guide"><h3>使用 AppID + AppSecret 绑定发布接口</h3><p class="helper">不需要填写公众号登录账号或密码。当前仅支持保存草稿，正式发布由你在微信后台完成。</p><ol><li>使用管理员账号打开<a href="https://developers.weixin.qq.com/" target="_blank" rel="noopener noreferrer">微信开发者平台</a>，进入“我的业务 → 公众号/服务号”，选择你自己的公众号，在开发信息中查看 AppID 和 AppSecret。<br><a href="https://developers.weixin.qq.com/doc/subscription/guide/dev/migration.html" target="_blank" rel="noopener noreferrer">查看官方迁移与配置指引</a> · <a href="https://developers.weixin.qq.com/console/product/mp/wxc566659dc1b920e7?tab1=basicInfo&amp;tab2=dev" target="_blank" rel="noopener noreferrer">公众号开发信息直达</a><br><span class="helper">直达链接对应指定公众号；绑定其他公众号时，请从“我的业务”选择你自己的公众号。</span></li><li>确认账号具有草稿箱、永久素材和图片上传接口权限。接口权限不足时无法写入草稿。</li><li>将服务器出口 IP 加入公众号 IP 白名单。点击下方验证后，若微信提示 40164，这里会显示需要加入的 IP。</li><li>填写下方资料，点击“验证并绑定”。凭据加密保存到你的访客空间，不返回浏览器、不进入 GitHub。</li><li>选择文章版本，生成封面后发送到草稿箱；在微信后台检查排版，再自行发布。</li></ol></section><form id="bindForm"><label>公众号名称<input id="wxName" required maxlength="60" placeholder="仅用于识别你绑定的账号"></label><label>AppID<input id="wxAppId" required autocomplete="off" placeholder="wx..."></label><label>AppSecret<input id="wxSecret" type="password" required autocomplete="off" placeholder="只在绑定时提交"></label><label>默认作者（可选）<input id="wxAuthor" maxlength="32"></label><p id="bindStatus" class="helper" role="status"></p><button id="bindSubmit" class="primary wide">验证并绑定</button><button id="unbindButton" class="text-button hidden" type="button">解除当前公众号绑定</button></form><details><summary>更换我的 API 配置（可选）</summary><p class="helper">默认使用共享配置，额度 30 次 / 日。可单独配置自己的搜索 Key 或增加自用模型。</p><form id="apiConfigForm"><label>TikHub API Key<input id="tikhubKey" type="password" autocomplete="off" placeholder="留空保留当前配置"></label><label>模型来源<input id="modelSource" placeholder="例如：我的服务商"></label><label>模型名称<input id="modelName" placeholder="服务商提供的真实模型 ID"></label><label>服务商 Base URL<input id="modelUrl" type="url" placeholder="https://.../v1"></label><label>模型协议<select id="modelProtocol"><option>OpenAI Chat</option><option>OpenAI Responses</option><option>Anthropic Messages</option></select></label><label>模型类型<select id="modelType"><option>文字模型</option><option>生图模型</option></select></label><label>模型 API Key<input id="modelKey" type="password" autocomplete="off"></label><p class="helper">首次添加自用模型后，写作模型列表改为你自己的配置；填写完整后保存。共享配置不受影响。</p><button class="secondary wide">保存我的配置</button></form></details></section></div>
   <div id="recordsDialog" class="dialog-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="recordsTitle"><section class="dialog-card"><div class="dialog-head"><h2 id="recordsTitle">草稿发送记录</h2><button id="closeRecords" class="dialog-close" aria-label="关闭">×</button></div><div id="draftRecords"></div><a href="https://mp.weixin.qq.com/" target="_blank" rel="noopener noreferrer">打开微信公众平台草稿箱</a></section></div>
   <div id="toast" class="toast hidden"></div>
-  <script src="config.js?v=2.1.0-searchfix"></script>
-  <script src="web-api.js?v=2.1.0-searchfix"></script>
-  <script src="app.js?v=2.1.0-searchfix"></script>
-  <script src="experience.js?v=2.1.0-searchfix"></script>
+  <script src="config.js?v=2.1.1-word-optional"></script>
+  <script src="web-api.js?v=2.1.1-word-optional"></script>
+  <script src="app.js?v=2.1.1-word-optional"></script>
+  <script src="experience.js?v=2.1.1-word-optional"></script>
 </body>
 </html>
