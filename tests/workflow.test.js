@@ -81,3 +81,16 @@ test('a failed model preserves the last successful HTML and can be retried separ
   const originalFetch=global.fetch;global.fetch=async()=>({ok:false,status:503,text:async()=>'{"error":{"message":"provider failure"}}'});
   try{await assert.rejects(()=>route(req(alice),{taskId:t.id,modelId:v.modelId},'/variant/generate'),/HTTP 503/);const failed=(await route(req(alice),{},'/state')).tasks.find(x=>x.id===t.id).variants.find(x=>x.modelId===v.modelId);assert.equal(failed.articleHtml,previous);assert.equal(failed.status,'error');assert.equal(failed.activeAttemptId,null);}finally{global.fetch=originalFetch;}
 });
+
+
+test('source image placement retains desktop fallback and never duplicates existing images',()=>{
+  const {placeSourceImages}=require('../backend/source-images');
+  const images=[{id:'资料图片 1',src:'https://example.com/one.jpg',alt:'真实资料图',beforeText:'销售 6400 单'}];
+  const matched=placeSourceImages('<p>销售 6400 单。</p><p>结尾</p>',images);
+  assert.match(matched.html,/<\/p><img .*one\.jpg/);
+  assert.equal(matched.warnings.length,0);
+  const fallback=placeSourceImages('<p>不匹配的正文。</p>',images);
+  assert.equal(fallback.warnings.length,1);
+  const again=placeSourceImages(fallback.html,images);
+  assert.equal((again.html.match(/<img /g)||[]).length,1);
+});

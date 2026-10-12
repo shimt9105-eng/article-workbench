@@ -8,6 +8,7 @@ const Jimp=require('jimp');
 const {digest,same,passwordHash,encrypt,decrypt,download,safeUrl}=require('./security');
 const {systemPrompt,buildModelInput,buildCoverPrompt,buildDraftArticles,sanitizeHtml,stripTags,nowIso,formatTaskTimestamp}=require('./core');
 const {callModel}=require('./model');
+const {placeSourceImages}=require('./source-images');
 const {normalize,recommend}=require('./research');
 const VERSION='2.0.0', INITIAL='根据固定 System 依据，把原始随笔润色成一篇完整的微信公众号文章。保留真实观点与个人表达，不虚构信息。';
 const PREFIX='article_web_', KEY=process.env.ENCRYPTION_KEY||'', SIGN=process.env.SESSION_SECRET||'';
@@ -80,7 +81,7 @@ async function documentInput(p){
   if(!content||content.length<20)throw new UserError('请粘贴至少 20 字资料正文，或上传 .docx。网页不能访问电脑文件路径，私有文档请粘贴内容');
   if(content.length>120000)throw new UserError('资料正文过长，请缩减到 12 万字以内');
   const $=cheerio.load(html||'<p></p>'),images=[];
-  $('img').each((n,el)=>{const src=$(el).attr('src');if(src){const id=`资料图片 ${n+1}`;images.push({id,src,beforeText:$(el).parent().prev().text(),afterText:$(el).parent().next().text()});$(el).replaceWith(`[${id}]`);}});
+  $('img').each((n,el)=>{const src=$(el).attr('src');if(src){const id=`资料图片 ${n+1}`;images.push({id,src,alt:$(el).attr('alt')||id,beforeText:$(el).parent().prev().text(),afterText:$(el).parent().next().text()});$(el).replaceWith(`[${id}]`);}});
   if(images.length) content=$.root().text();
   return {sourceDocContent:content,sourceDocHtml:html,sourceImages:images,sourceDocImageCount:images.length,sourceDocTitle:p.docxName||'上传 / 粘贴的资料',sourceDocUrl:String(p.sourceDocUrl||''),sourceDocWarnings:[]};
 }
@@ -92,7 +93,6 @@ async function benchmarkInput(p){
   if(!el.length||content.length<100||/环境异常|访问过于频繁|内容已被发布者删除/.test($('body').text()))throw new UserError('未能取得对标全文，请打开原文并粘贴正文后再生成；不会使用摘要替代全文');
   return {benchmarkContent:content.slice(0,120000),benchmarkTitle:$('#activity-name').text().trim()||$('meta[property="og:title"]').attr('content')||'对标文章',benchmarkSource:'full_text'};
 }
-function placeImages(html,images){let result=html;for(const i of images){const marker=`[${i.id}]`;if(!result.includes(marker))throw new UserError(`文章遗漏 ${i.id}，请重试该模型`);result=result.replace(marker,`<img src="${i.src.replaceAll('"','&quot;')}" alt="${i.id}">`);}return safeHtml(result);}
 async function generate(user,p){
   const t=await task(user,p.taskId),v=await variant(user,p.taskId,p.modelId),m=await model(user,p.modelId);
   if(v.activeAttemptId&&Date.now()-Date.parse(v.startedAt)<=910000)throw new UserError('此版本正在生成，请等待完成',409);
@@ -102,11 +102,11 @@ async function generate(user,p){
   if(mode==='revise')comments.push({id:uid(),role:'user',text:instruction,selectedText:p.selectedText||'',createdAt:start});
   try{
     const result=await callModel(m,buildModelInput({task:{...t,articleHtml:v.articleHtml,comments},instruction,selectedText:p.selectedText||'',mode}));
-    const html=placeImages(result.html,t.sourceImages||[]);
+    const placed=placeSourceImages(result.html,t.sourceImages||[]),html=safeHtml(placed.html);
     comments.push({id:uid(),role:'assistant',text:result.comment,createdAt:nowIso()});
     const saved=await claim('variants',v._id,'activeAttemptId',attempt,{articleHtml:html,comments,status:'idle',activeAttemptId:null,completedAttemptId:attempt,revision:v.revision+2,lastError:''});
     if(!saved)throw new UserError('生成结果已被更新任务取代',409);
-    await patch('tasks',t._id,{updatedAt:nowIso()});return {ok:true};
+    await patch('tasks',t._id,{updatedAt:nowIso(),sourceDocWarnings:[...new Set([...(t.sourceDocWarnings||[]),...placed.warnings])]});return {ok:true};
   }catch(e){
     const message=e.status?e.message:/timeout|abort/i.test(e.message)?'模型调用超时，可重试该版本':/HTTP \d+/.exec(e.message)?.[0]?'模型服务调用失败（'+(/HTTP \d+/.exec(e.message)[0])+')，请检查模型配置或重试':'模型生成失败，请检查配置或重试；原有正文已保留';
     await claim('variants',v._id,'activeAttemptId',attempt,{status:'error',activeAttemptId:null,lastError:message,comments:[...comments,{id:uid(),role:'assistant',text:message,createdAt:nowIso()}],revision:v.revision+2});
