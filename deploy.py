@@ -68,9 +68,9 @@ def main():
         fd=os.open(secret_file,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
         with os.fdopen(fd,'w') as f: json.dump(private,f)
     os.chmod(secret_file,0o600)
-    env={**private,'CLOUDBASE_ENV_ID':settings['CLOUDBASE_ENV_ID'],'CLOUDBASE_APIKEY':key,'MODELS_B64':base64.b64encode(json.dumps(models,ensure_ascii=False).encode()).decode(),'TIKHUB_API_KEY':search_keys[0],'WECHAT_API_BASE_URL':wx['WECHAT_API_BASE_URL'],'WECHAT_PROXY_SECRET':wx.get('WECHAT_PROXY_SECRET',''),'ALLOWED_ORIGINS':'https://shimt9105-eng.github.io','USE_SHARED_CONFIG':'enabled','DAILY_LIMIT':'quota:30','GLOBAL_DAILY_LIMIT':'quota:300'}
+    env={**private,'CLOUDBASE_ENV_ID':settings['CLOUDBASE_ENV_ID'],'CLOUDBASE_APIKEY':key,'MODELS_B64':base64.b64encode(json.dumps(models,ensure_ascii=False).encode()).decode(),'TIKHUB_API_KEY':search_keys[0],'WECHAT_API_BASE_URL':wx['WECHAT_API_BASE_URL'],'WECHAT_PROXY_SECRET':wx.get('WECHAT_PROXY_SECRET',''),'ALLOWED_ORIGINS':'https://shimt9105-eng.github.io','USE_SHARED_CONFIG':'enabled','DAILY_LIMIT':'quota:30','GLOBAL_DAILY_LIMIT':'quota:300','TZ':'Asia/Shanghai'}
     SENSITIVE.extend([key,search_keys[0],wx.get('WECHAT_PROXY_SECRET',''),*private.values(),*[m['apiKey'] for m in models],env['MODELS_B64']])
-    config={'envId':settings['CLOUDBASE_ENV_ID'],'functions':[{'name':NAME,'dir':str(SCRIPT/'backend'),'type':'HTTP','runtime':'Nodejs20.19','handler':'server.main','gatewayPath':'/'+NAME,'public':True,'timeout':900,'memorySize':512,'installDependency':True,'envVariables':env}]}
+    config={'envId':settings['CLOUDBASE_ENV_ID'],'functions':[{'name':NAME,'dir':str(SCRIPT/'backend'),'type':'HTTP','runtime':'Nodejs20.19','handler':'server.main','gatewayPath':'/'+NAME,'public':True,'timeout':900,'memorySize':512,'installDependency':True,'ignore':['node_modules/**','node_modules','.git/**'],'envVariables':env}]}
     # Bootstrap only new, separately named collections; existing desktop/bot state is untouched.
     for name in ['users','sessions','credentials','limits','tasks','variants','searches','drafts']:
         command={'update':'article_web_'+name,'updates':[{'q':{'_id':'__bootstrap__'},'u':{'$set':{'bootstrap':True}},'upsert':True}]}

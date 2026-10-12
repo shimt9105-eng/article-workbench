@@ -1,3 +1,4 @@
-#!/bin/sh
+#!/bin/bash
+export PORT=9000
 cd /var/user
-exec /var/lang/node20/bin/node server.js
+exec /var/lang/node20/bin/node bootstrap.js

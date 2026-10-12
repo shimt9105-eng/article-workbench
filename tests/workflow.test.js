@@ -55,3 +55,29 @@ test('accounts cannot see or modify each other’s task or credentials',async()=
 });
 test('forged session and logged-out session are rejected',async()=>{await assert.rejects(()=>route(req('forged'),{},'/state'),/登录/);const login=await route(req(''),{username:'qa_alice',password:'test-password-123'},'/auth/login');await route(req(login.token),{},'/auth/logout');await assert.rejects(()=>route(req(login.token),{},'/state'),/登录失效/);});
 test('publishing refuses unbound accounts without model or WeChat calls',async()=>{await assert.rejects(()=>route(req(alice),{taskId:'test-task',modelId:'model'},'/article/publish'),/绑定/);});
+test('initial and feedback generation retain the exact fixed System and guard concurrent attempts',async()=>{
+  const user=digest('qa_alice'),config={models:[{id:'qa-text',name:'qa-model',source:'isolated',apiKey:'qa-only',baseUrl:'https://example.com/v1',protocol:'OpenAI Chat',type:'文字模型'}]};
+  await collection('article_web_credentials').add({_id:user,encrypted:encrypt(config,process.env.ENCRYPTION_KEY)});
+  const created=await route(req(alice),{modelIds:['qa-text'],sourceDocContent:'真实产品资料，明确功能，不虚构承诺。真实产品资料。',benchmarkContent:'这是一份真实全文的隔离测试文本。'.repeat(20),benchmarkUrl:'https://mp.weixin.qq.com/s?test=1',originalEssay:'我自己的实际观点。'},'/task/create');
+  const previousFetch=global.fetch;let release,requestBody;
+  const pending=new Promise(r=>{release=r;});
+  global.fetch=async(url,options)=>{requestBody=JSON.parse(options.body);await pending;return {ok:true,text:async()=>JSON.stringify({choices:[{message:{content:JSON.stringify({html:'<h1>真实文章</h1><p>按照用户事实写作。</p>',comment:'已更新全文'})}}]})};};
+  try{
+    const generation=route(req(alice),{taskId:created.taskId,modelId:'qa-text'},'/variant/generate');
+    while(!requestBody)await new Promise(r=>setImmediate(r));
+    assert.equal(requestBody.messages[0].content,require('../backend/core').systemPrompt());
+    const input=JSON.parse(requestBody.messages[1].content);assert.equal(input.固定System依据.原始随笔,'我自己的实际观点。');assert.equal(input.任务模式,'initial');
+    await assert.rejects(()=>route(req(alice),{taskId:created.taskId,modelId:'qa-text'},'/variant/generate'),/正在生成/);
+    release();await generation;
+    const latest=(await collection('article_web_variants').doc(digest(created.taskId+':qa-text')).get()).data[0];assert(latest.completedAttemptId);assert.equal(latest.activeAttemptId,null);assert(latest.articleHtml.includes('真实文章'));
+    const attempts=latest.completedAttemptId;
+    await route(req(alice),{taskId:created.taskId,modelId:'qa-text',instruction:'结尾更具体',selectedText:'用户原句'},'/variant/generate');
+    const feedback=JSON.parse(requestBody.messages[1].content);assert.equal(feedback.任务模式,'revise');assert.equal(feedback.用户选中的文章文本,'用户原句');assert.equal(feedback.固定System依据.原始随笔,'我自己的实际观点。');
+    const revised=(await collection('article_web_variants').doc(digest(created.taskId+':qa-text')).get()).data[0];assert.notEqual(revised.completedAttemptId,attempts);assert(revised.comments.some(c=>c.text==='结尾更具体'));
+  }finally{global.fetch=previousFetch;}
+});
+test('a failed model preserves the last successful HTML and can be retried separately',async()=>{
+  const list=(await route(req(alice),{},'/state')).tasks;const t=list.find(t=>t.variants.some(v=>v.modelId==='qa-text')),v=t.variants.find(v=>v.modelId==='qa-text');const previous=v.articleHtml;
+  const originalFetch=global.fetch;global.fetch=async()=>({ok:false,status:503,text:async()=>'{"error":{"message":"provider failure"}}'});
+  try{await assert.rejects(()=>route(req(alice),{taskId:t.id,modelId:v.modelId},'/variant/generate'),/HTTP 503/);const failed=(await route(req(alice),{},'/state')).tasks.find(x=>x.id===t.id).variants.find(x=>x.modelId===v.modelId);assert.equal(failed.articleHtml,previous);assert.equal(failed.status,'error');assert.equal(failed.activeAttemptId,null);}finally{global.fetch=originalFetch;}
+});

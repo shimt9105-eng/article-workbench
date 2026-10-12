@@ -4,7 +4,7 @@ const cloudbase=require('@cloudbase/node-sdk');
 const cheerio=require('cheerio');
 const clean=require('sanitize-html');
 const mammoth=require('mammoth');
-const sharp=require('sharp');
+const Jimp=require('jimp');
 const {digest,same,passwordHash,encrypt,decrypt,download,safeUrl}=require('./security');
 const {systemPrompt,buildModelInput,buildCoverPrompt,buildDraftArticles,sanitizeHtml,stripTags,nowIso,formatTaskTimestamp}=require('./core');
 const {callModel}=require('./model');
@@ -68,7 +68,7 @@ async function imageData(src){
   if(/^data:image\/(png|jpeg|gif);base64,/i.test(src)){buffer=Buffer.from(src.split(',')[1],'base64');type=src.slice(5,src.indexOf(';'));}
   else {({buffer,type}=await download(src));}
   if(!buffer.length||buffer.length>10*1024*1024)throw new UserError('图片为空或超过 10MB');
-  await sharp(buffer).metadata();return {buffer,type};
+  await Jimp.read(buffer);return {buffer,type};
 }
 async function documentInput(p){
   let content=String(p.sourceDocContent||'').trim(),html=String(p.sourceDocHtml||'');
@@ -143,7 +143,7 @@ async function cover(user,t,v){
   const data=await r.json(),image=data.data?.[0];let buffer;
   if(image?.b64_json)buffer=Buffer.from(image.b64_json,'base64');else if(image?.url)({buffer}=await download(image.url));else throw new UserError('生图模型未返回图片',502);
   if(buffer.length>10*1024*1024)throw new UserError('封面超过 10MB');
-  for(const quality of [80,65,50,35,20]){const b=await sharp(buffer).resize(900,383,{fit:'cover'}).jpeg({quality}).toBuffer();if(b.length<=64*1024)return {buffer:b,model:m.name};}
+  for(const quality of [80,65,50,35,20]){const image=await Jimp.read(buffer);const b=await image.cover(900,383).quality(quality).getBufferAsync(Jimp.MIME_JPEG);if(b.length<=64*1024)return {buffer:b,model:m.name};}
   throw new UserError('封面压缩后仍超过 64KB');
 }
 async function publish(user,p){
@@ -160,7 +160,7 @@ async function publish(user,p){
     const token=await wxToken(c),generated=await cover(user,t,v),thumb=await uploadWx(c,token,'/material/add_material?type=thumb',generated.buffer,'image/jpeg','cover.jpg');
     const $=cheerio.load(v.articleHtml,{xmlMode:false});const cache=new Map();
     for(const img of $('img').toArray()){
-      const src=$(img).attr('src');if(!cache.has(src)){const bytes=await imageData(src);const converted=await sharp(bytes.buffer).jpeg({quality:85}).toBuffer();const uploaded=await uploadWx(c,token,'/media/uploadimg',converted,'image/jpeg','inline.jpg');if(!uploaded.url)throw new UserError('正文图片上传失败',502);cache.set(src,uploaded.url);}
+      const src=$(img).attr('src');if(!cache.has(src)){const bytes=await imageData(src);const converted=await (await Jimp.read(bytes.buffer)).quality(85).getBufferAsync(Jimp.MIME_JPEG);const uploaded=await uploadWx(c,token,'/media/uploadimg',converted,'image/jpeg','inline.jpg');if(!uploaded.url)throw new UserError('正文图片上传失败',502);cache.set(src,uploaded.url);}
       $(img).attr('src',cache.get(src));
     }
     if(!thumb.media_id)throw new UserError('封面上传失败，尚未创建草稿',502);

@@ -464,7 +464,8 @@ ui.newTaskForm.addEventListener("submit", async (event) => {
     ui.newTaskForm.reset();
     window.clearUploadedDocument?.();
     render();
-    toast(`${modelIds.length} 个模型已并行完成，System 已锁定`);
+    const completed = activeTask()?.variants.filter(v => v.articleHtml && v.status !== "error").length || 0;
+    toast(`${completed} 个模型生成成功${completed < modelIds.length ? `，${modelIds.length - completed} 个失败，可分别重试` : ""}，System 已锁定`, 10000);
   } catch (error) {
     toast(error.message || String(error), 12000);
   } finally {
@@ -522,7 +523,7 @@ ui.confirmPublishButton.addEventListener("click", async () => {
     const succeeded = response.results.filter((item) => ["success", "duplicate"].includes(item.status));
     const failed = response.results.filter((item) => item.status === "failed");
     const duplicateCount = succeeded.filter((item) => item.status === "duplicate").length;
-    const summary = `已用 ${response.coverModel || "生图模型"} 生成 ${response.coverCount || modelIds.length} 张封面，并写入草稿箱 ${succeeded.length} 篇${duplicateCount ? `（${duplicateCount} 篇已存在，未重复建立）` : ""}`;
+    const summary = `本次生成 ${response.coverCount || 0} 张封面，草稿箱已确认 ${succeeded.length} 篇${duplicateCount ? `（${duplicateCount} 篇已存在，未重复建立）` : ""}`;
     toast(failed.length ? `${summary}；${failed.length} 篇失败：${failed.map((item) => `${item.model_name}：${item.error}`).join("；")}` : summary, 14000);
   } catch (error) {
     toast(error.message || String(error), 14000);
