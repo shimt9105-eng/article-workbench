@@ -92,7 +92,7 @@ function previewDocument(title, html, readOnly=false) {
 }
 
 function emptyPreviewDocument() {
-  return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><style>html,body{height:100%;margin:0}body{display:grid;place-items:center;background:#fff;color:#747982;font-family:-apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif}.empty{text-align:center;max-width:330px}.icon{font-size:34px;color:#3370ff}h2{margin:10px 0;color:#24262b;font-size:20px}p{font-size:14px;line-height:1.7}</style></head><body><div class="empty"><div class="icon">✦</div><h2>从一篇随笔开始</h2><p>固定 System 后，编辑2号会生成完整的公众号 HTML 网页。</p></div></body></html>`;
+  return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><style>html,body{height:100%;margin:0}body{display:grid;place-items:center;background:#fff;color:#747982;font-family:-apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif}.empty{text-align:center;max-width:330px}.icon{font-size:34px;color:#3370ff}h2{margin:10px 0;color:#24262b;font-size:20px}p{font-size:14px;line-height:1.7}</style></head><body><div class="empty"><div class="icon">✦</div><h2>从一篇随笔开始</h2></div></body></html>`;
 }
 
 function attachPreviewSelection() {
@@ -334,14 +334,14 @@ function renderActive() {
     ui.lockedSystemPanel.classList.add("hidden");
     ui.commentsPanel.classList.add("hidden");
     ui.articleTitle.textContent = "新文章";
-    ui.articleMeta.textContent = "填写右侧 System 后生成初稿";
+    ui.articleMeta.textContent = "";
     ui.variantSwitcher.classList.add("hidden");
     ui.variantSwitcher.innerHTML = "";
     ui.articlePreview.srcdoc = emptyPreviewDocument();
     ui.publishButton.disabled = true;
     ui.sendCommentButton.disabled=false;ui.commentInput.disabled=false;ui.addModelButton.disabled=false;
     ui.retryVariantButton.classList.add("hidden");
-    ui.saveStatus.textContent = "文字可直接编辑";
+    ui.saveStatus.textContent = "";
     closePublishDialog();
     ui.addModelPanel.classList.add("hidden");
     return;
@@ -363,8 +363,8 @@ function renderActive() {
   renderAddModelOptions();
   if(task.readOnly){
     ui.addModelPanel.classList.add("hidden");
-    ui.systemDetails.innerHTML=`<div class="system-row"><span>历史模型版本</span><p>${escapeHtml(variants.map(v=>v.modelName).join("、"))}</p></div><p class="helper">历史成稿与原图完整保留，只读展示。原始资料、随笔和私人修改记录未公开。</p>`;
-    ui.commentList.innerHTML='<p class="helper">历史文章保留展示，可切换模型版本查看。新建任务后可体验创作与修改。</p>';ui.commentCount.textContent='—';selectedText="";renderSelection();return;
+    ui.systemDetails.innerHTML=`<div class="system-row"><span>历史模型版本</span><p>${escapeHtml(variants.map(v=>v.modelName).join("、"))}</p></div>`;
+    ui.commentList.innerHTML='';ui.commentCount.textContent='—';selectedText="";renderSelection();return;
   }
   const sourceLocation = task.sourceDocUrl || task.dingDocUrl || "";
   const sourceLabel = task.sourceDocTitle || task.dingDocTitle || sourceLocation;

@@ -31,7 +31,7 @@ async function runVariants(taskId,modelIds,instruction,selectedText){
   if(results.every(r=>r.status==='rejected'))throw new Error(results.map(r=>r.reason.message).join('；'));
   return s;
 }
-window.clearUploadedDocument=()=>{uploadedDocument=null;window.wordUploadBusy=false;window.wordUploadError='';document.getElementById('sourceFile').value='';document.getElementById('sourceFileStatus').textContent='可以不上传，直接根据对标文章和你的随笔创作。';document.getElementById('clearUpload').classList.add('hidden');};
+window.clearUploadedDocument=()=>{uploadedDocument=null;window.wordUploadBusy=false;window.wordUploadError='';document.getElementById('sourceFile').value='';document.getElementById('sourceFileStatus').textContent='';document.getElementById('clearUpload').classList.add('hidden');};
 window.setUploadedDocument=data=>{uploadedDocument=data;};
 window.setBenchmarkDocument=(data,url)=>{benchmarkDocument=data?{...data,url}:null;};
 window.editor2={

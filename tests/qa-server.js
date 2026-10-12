@@ -3,6 +3,7 @@ const http=require('node:http'),fs=require('node:fs'),path=require('node:path');
 const port=Number(process.env.QA_PORT||4382),remaining=Number(process.env.QA_REMAINING??10);const root=path.resolve(__dirname,'../web');let task=null,reads=0;
 const articles=[1,2,3,4].map(id=>({id:String(id),url:'https://mp.weixin.qq.com/s?qa='+id,title:['如何用 AI 理清电商经营流程','从重复劳动到业务自动化','电商 Agent 的实际落地边界','让工具回到具体问题'][id-1],account:'隔离测试来源 '+id,readCountText:id===1?'阅读 1.2万':'未提供',summary:'隔离测试摘要，只用于验证用户流程，不是真实文章。'}));
 const models=[{id:'qa-model',source:'隔离测试服务',name:'qa-text'},{id:'qa-model-2',source:'另一隔离服务',name:'qa-text'}];
+if(process.env.QA_MODEL_COUNT){const count=Number(process.env.QA_MODEL_COUNT);for(let n=models.length;n<count;n++)models.push({id:'qa-model-'+(n+1),source:n%2?'micu':'packey',name:['deepseek-flash','gemini-3.8-flash','claude-opus-5','gpt-6-astra'][n%4]});}
 const s=()=>({tasks:task?[task]:[],activeTaskId:task?.id});
 http.createServer(async(req,res)=>{
   const url=new URL(req.url,'http://localhost');
