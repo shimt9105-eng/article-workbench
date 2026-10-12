@@ -10,7 +10,8 @@ const {systemPrompt,buildModelInput,buildCoverPrompt,buildDraftArticles,sanitize
 const {callModel}=require('./model');
 const {placeSourceImages}=require('./source-images');
 const {parseSearchResponse,recommend}=require('./research');
-const VERSION='2.1.1', INITIAL='根据固定 System 依据，把原始随笔润色成一篇完整的微信公众号文章。保留真实观点与个人表达，不虚构信息。';
+const {articleUrl,readArticle}=require('./benchmark');
+const VERSION='2.1.2', INITIAL='根据固定 System 依据，把原始随笔润色成一篇完整的微信公众号文章。保留真实观点与个人表达，不虚构信息。';
 const PREFIX='article_web_', KEY=process.env.ENCRYPTION_KEY||'', SIGN=process.env.SESSION_SECRET||'';
 const app=cloudbase.init({env:process.env.CLOUDBASE_ENV_ID||cloudbase.SYMBOL_CURRENT_ENV,...(process.env.CLOUDBASE_APIKEY?{accessKey:process.env.CLOUDBASE_APIKEY}:{})});
 const db=app.database();
@@ -101,13 +102,23 @@ async function documentInput(p){
   if(images.length) content=$.root().text();
   return {sourceDocContent:content,sourceDocHtml:html,sourceImages:images,sourceDocImageCount:images.length,sourceDocTitle:p.docxName||'上传 / 粘贴的资料',sourceDocUrl:String(p.sourceDocUrl||''),sourceDocWarnings:[]};
 }
-async function benchmarkInput(p){
+const benchmarkReads=new Map();
+async function benchmarkInput(p,user){
   if(p.benchmarkContent){const text=String(p.benchmarkContent).trim();if(text.length<100)throw new UserError('对标正文至少需要 100 字');return {benchmarkContent:text.slice(0,120000),benchmarkTitle:p.benchmarkTitle||'用户提供的对标全文',benchmarkSource:'user_pasted'};}
-  let u;try{u=new URL(p.benchmarkUrl);}catch{throw new UserError('请填写有效的对标文章链接');}if(u.hostname!=='mp.weixin.qq.com'||u.protocol!=='https:'||u.username||u.password)throw new UserError('对标文章请使用 HTTPS 微信文章链接');
-  let buffer;try{({buffer}=await download(u.toString(),4*1024*1024));}catch{throw new UserError('暂时无法读取对标文章，请稍后重试或更换链接；已填写内容会保留',502);}const $=cheerio.load(buffer.toString('utf8'));
-  const el=$('#js_content');el.find('script,style').remove();const content=el.text().trim();
-  if(!el.length||content.length<100||/环境异常|访问过于频繁|内容已被发布者删除/.test($('body').text()))throw new UserError('微信暂未提供对标全文，请确认原文可访问，稍后重试或更换对标文章；已填写内容会保留');
-  return {benchmarkContent:content.slice(0,120000),benchmarkTitle:$('#activity-name').text().trim()||$('meta[property="og:title"]').attr('content')||'对标文章',benchmarkSource:'full_text'};
+  const url=articleUrl(p.benchmarkUrl),id=digest(url);
+  const cached=user?await get('benchmarks',id):null;
+  if(cached?.benchmarkContent&&Date.now()-cached.savedAt<7*86400000)return {benchmarkContent:cached.benchmarkContent,benchmarkTitle:cached.benchmarkTitle,benchmarkSource:cached.benchmarkSource};
+  if(benchmarkReads.has(id))return benchmarkReads.get(id);
+  const reading=(async()=>{
+    const c=user?await config(user):{};
+    const article=await readArticle(url,{apiKey:c.tikhub,beforeProvider:async()=>{
+      if(trial&&p.modelIds?.length&&(await trialQuota(user)).remaining<p.modelIds.length+1)throw new UserError('本次需读取对标全文并生成文章，请减少模型数量以保留足够额度',429);
+      await usage(user);
+    }});
+    if(user){const data={...article,url,savedAt:Date.now()};if(cached)await patch('benchmarks',id,data);else try{await add('benchmarks',id,data);}catch(e){if(!await get('benchmarks',id))throw e;}}
+    return article;
+  })();
+  benchmarkReads.set(id,reading);try{return await reading;}finally{benchmarkReads.delete(id);}
 }
 async function generate(user,p){
   const t=await task(user,p.taskId),v=await variant(user,p.taskId,p.modelId),m=await model(user,p.modelId);
@@ -262,13 +273,13 @@ async function route(req,p,path){
     if(!s.articles.length)return {recommendations:[]};await usage(user);const m=await model(user,p.modelId);
     const recommendations=await recommend(m,s.keyword,String(p.goal||'').slice(0,2000),s.articles);await patch('searches',s._id,{recommendations,modelId:m.id,recommendedAt:nowIso()});return {recommendations};
   }
-  if(path==='/benchmark/read')return benchmarkInput(p);
+  if(path==='/benchmark/read')return benchmarkInput(p,user);
   if(path==='/document/read')return documentInput(p);
   if(path==='/task/create'){
     if(trial&&(await trialQuota(user)).remaining===0)throw new UserError('10 次体验额度已用完，历史文章仍可查看',429);
     const ids=[...new Set(p.modelIds||[])];if(!ids.length||ids.length>8)throw new UserError('请选择 1–8 个写作模型');
     if(!String(p.originalEssay||'').trim())throw new UserError('请填写随笔或初步想法');
-    const chosen=await Promise.all(ids.map(id=>model(user,id)));const [doc,b]=await Promise.all([documentInput(p),benchmarkInput(p)]),id=uid();
+    const chosen=await Promise.all(ids.map(id=>model(user,id)));const [doc,b]=await Promise.all([documentInput(p),benchmarkInput(p,user)]),id=uid();
     await add('tasks',id,{user,title:formatTaskTimestamp(),...doc,...b,benchmarkUrl:String(p.benchmarkUrl||''),originalEssay:String(p.originalEssay).slice(0,120000),systemLocked:true,createdAt:nowIso(),updatedAt:nowIso(),schemaVersion:1});
     for(const m of chosen)await add('variants',digest(id+':'+m.id),{user,taskId:id,modelId:m.id,modelName:m.name,source:m.source,status:'idle',articleHtml:'',comments:[],revision:0,activeAttemptId:null,completedAttemptId:null});
     return {taskId:id};
@@ -302,7 +313,7 @@ async function handle(req,res){
     let p;try{p=raw?JSON.parse(raw):{};}catch{throw new UserError('提交格式无效');}
     const path=new URL(req.url,'http://localhost').pathname.replace(/^\/article-workbench-api/,'');
     const result=await route(req,p,path);respond(200,result);
-  }catch(e){respond(e.status||500,{error:e.status?e.message:'服务暂时不可用，请稍后重试'});}
+  }catch(e){const requestId=uid();console.error(JSON.stringify({event:'request_failed',requestId,path:new URL(req.url,'http://localhost').pathname,status:e.status||500,code:String(e.code||e.name||'Error').replace(/[^a-zA-Z0-9_.-]/g,'').slice(0,100)}));respond(e.status||500,{error:e.status?e.message:'任务服务异常，请稍后重试；已填写内容会保留',requestId});}
 }
 if(require.main===module)http.createServer(handle).listen(Number(process.env.PORT||9000),'0.0.0.0');
 module.exports={handle,route,safeHtml,documentInput,benchmarkInput,VERSION};

@@ -72,13 +72,13 @@ def main():
     SENSITIVE.extend([key,search_keys[0],wx.get('WECHAT_PROXY_SECRET',''),*private.values(),*[m['apiKey'] for m in models],env['MODELS_B64']])
     config={'envId':settings['CLOUDBASE_ENV_ID'],'functions':[{'name':NAME,'dir':str(SCRIPT/'backend'),'type':'HTTP','runtime':'Nodejs20.19','handler':'server.main','gatewayPath':'/'+NAME,'public':True,'timeout':900,'memorySize':512,'installDependency':True,'ignore':['node_modules/**','node_modules','.git/**'],'envVariables':env}]}
     # Bootstrap only new, separately named collections; existing desktop/bot state is untouched.
-    for name in ['users','sessions','credentials','limits','tasks','variants','searches','drafts']:
+    for name in ['users','sessions','credentials','limits','tasks','variants','searches','drafts','benchmarks']:
         command={'update':'article_web_'+name,'updates':[{'q':{'_id':'__bootstrap__'},'u':{'$set':{'bootstrap':True}},'upsert':True}]}
         run([cli,'db','nosql','execute','-e',settings['CLOUDBASE_ENV_ID'],'--command',json.dumps([{'TableName':'article_web_'+name,'CommandType':'UPDATE','Command':json.dumps(command)}]),'--json'],SCRIPT)
     with tempfile.TemporaryDirectory(prefix='article-workbench-deploy-') as directory:
         p=Path(directory)/'cloudbaserc.json';p.write_text(json.dumps(config,ensure_ascii=False));p.chmod(0o600)
         run([cli,'fn','deploy',NAME,'--force','--httpFn','--dir',str(SCRIPT/'backend'),'--install-dependency','true','--json'],directory)
-    public={'version':'2.1.1','envId':settings['CLOUDBASE_ENV_ID'],'api':settings['CLOUDBASE_SITE_URL']+'/'+NAME,'models':[{'source':m['source'],'name':m['name'],'type':m['type']} for m in models],'trialLimit':10,'trialScope':'visitor','globalDailyLimit':30}
+    public={'version':'2.1.2','envId':settings['CLOUDBASE_ENV_ID'],'api':settings['CLOUDBASE_SITE_URL']+'/'+NAME,'models':[{'source':m['source'],'name':m['name'],'type':m['type']} for m in models],'trialLimit':10,'trialScope':'visitor','globalDailyLimit':30}
     (SCRIPT.parent/'document'/'deployment.json').write_text(json.dumps(public,ensure_ascii=False,indent=2))
     print(json.dumps({'deployed':NAME,'modelCount':len(models),'api':public['api']},ensure_ascii=False))
 
