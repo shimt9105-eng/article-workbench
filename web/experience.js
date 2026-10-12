@@ -20,7 +20,7 @@ async function enterGuest(){
 }
 el('guestRetry').onclick=enterGuest;
 window.addEventListener('sessionExpired',()=>{localStorage.removeItem('articleGuestSession');enterGuest();});
-async function refreshQuota(){try{const q=await webApi('/quota');window.trialRemaining=q.remaining;message('quotaStatus',`${q.scope==='site'?'全站合计':'本浏览器'}体验 ${q.remaining} / ${q.limit} 次剩余${q.remaining===0?' · 已用完':''}`);applyTrialQuota();}catch{}}
+async function refreshQuota(){try{const q=await webApi('/quota');window.trialRemaining=q.remaining;message('quotaStatus',`${q.scope==='site'?'全站合计':'访客'}体验 ${q.remaining} / ${q.limit} 次剩余${q.remaining===0?' · 已用完':''}`);applyTrialQuota();}catch{}}
 function applyTrialQuota(){const exhausted=window.trialRemaining===0,history=!creating&&!!activeTask()?.readOnly;el('newTaskButton').disabled=exhausted;el('newTaskForm').querySelector('button[type=submit]').disabled=exhausted;el('researchSubmit').disabled=exhausted||researchBusy;el('recommendRetry').disabled=exhausted||researchBusy;if(exhausted||history){el('publishButton').disabled=true;el('addModelButton').disabled=true;el('sendCommentButton').disabled=true;}}
 window.addEventListener('quotaChanged',refreshQuota);
 function articleCard(a,index,reason){

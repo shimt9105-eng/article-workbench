@@ -9,11 +9,11 @@ http.createServer(async(req,res)=>{
   if(url.pathname==='/config.js'){res.setHeader('Content-Type','text/javascript');return res.end(`window.WORKBENCH_API="http://127.0.0.1:${port}/api";`);}
   if(!url.pathname.startsWith('/api/')){const file=path.join(root,url.pathname==='/'?'index.html':url.pathname);if(!file.startsWith(root)||!fs.existsSync(file)){res.writeHead(404);return res.end();}res.setHeader('Content-Type',file.endsWith('.css')?'text/css':file.endsWith('.js')?'text/javascript':file.endsWith('.json')?'application/json':file.endsWith('.png')?'image/png':'text/html');return res.end(fs.readFileSync(file));}
   let raw='';for await(const chunk of req)raw+=chunk;const p=raw?JSON.parse(raw):{},route=url.pathname.slice(4);let data;
-  if(route==='/guest/enter')data={token:'qa-fixture-only',quota:{limit:10,remaining,scope:'site'}};
-  else if(route==='/quota')data={limit:10,used:10-remaining,remaining,scope:'site'};
+  if(route==='/guest/enter')data={token:'qa-fixture-only',quota:{limit:10,remaining,scope:'visitor'}};
+  else if(route==='/quota')data={limit:10,used:10-remaining,remaining,scope:'visitor'};
   else if(route==='/auth/login')data={token:'qa-fixture-only',username:'qa_user'};
   else if(route==='/models')data=models;
-  else if(route==='/config/status')data={shared:true,hasSearch:true,models,dailyLimit:30,quota:{limit:10,remaining,scope:'site'},wechat:null};
+  else if(route==='/config/status')data={shared:true,hasSearch:true,models,dailyLimit:30,quota:{limit:10,remaining,scope:'visitor'},wechat:null};
   else if(route==='/state')data=s();
   else if(route==='/research/search')data={id:'qa-search',articles};
   else if(route==='/research/recommend')data={recommendations:articles.slice(0,3).map(a=>({...a,reason:'与电商流程自动化主题相关；这里只依据标题摘要推荐，选入后再读全文。'}))};

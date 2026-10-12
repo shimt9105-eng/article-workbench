@@ -35,11 +35,18 @@ async function usage(user){
   if(trial){
     const id=trialId(user);try{await add('limits',id,{count:0,createdAt:Date.now()});}catch(e){if(!await get('limits',id))throw e;}
     const r=await col('limits').where({_id:id,count:db.command.lt(10)}).update({count:db.command.inc(1)});
-    if(r.updated!==1)throw new UserError('10 次体验额度已用完，历史文章仍可查看',429);return;
+    if(r.updated!==1)throw new UserError('10 次体验额度已用完，历史文章仍可查看',429);
+    if(process.env.TRIAL_SCOPE==='visitor'){
+      const globalId=digest('trial-global:'+new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Shanghai'}));
+      try{await add('limits',globalId,{count:0,createdAt:Date.now()});}catch(e){if(!await get('limits',globalId))throw e;}
+      const reserved=await col('limits').where({_id:globalId,count:db.command.lt(Number(String(process.env.GLOBAL_DAILY_LIMIT||30).replace('quota:','')))}).update({count:db.command.inc(1)});
+      if(reserved.updated!==1){await col('limits').doc(id).update({count:db.command.inc(-1)});throw new UserError('今日全站共享调用已达保护上限，明日再试；你的剩余体验额度已保留',429);}
+    }
+    return;
   }
   const globalId=digest('global:'+new Date().toISOString().slice(0,10));
   try{await add('limits',globalId,{count:0,createdAt:Date.now()});}catch(e){if(!await get('limits',globalId))throw e;}
-  const global=await col('limits').where({_id:globalId,count:db.command.lt(Number(String(process.env.GLOBAL_DAILY_LIMIT||300).replace('quota:','')))}).update({count:db.command.inc(1)});
+  const global=await col('limits').where({_id:globalId,count:db.command.lt(Number(String(process.env.GLOBAL_DAILY_LIMIT||30).replace('quota:','')))}).update({count:db.command.inc(1)});
   if(global.updated!==1)throw new UserError('今日全站共享额度已用完，明日再试',429);
   const id=digest(user+':'+new Date().toISOString().slice(0,10));
   try{await add('limits',id,{count:0,createdAt:Date.now()});}catch(e){if(!await get('limits',id))throw e;}

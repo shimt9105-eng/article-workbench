@@ -14,7 +14,7 @@ function collection(name){
 }
 const original=Module._load;
 Module._load=function(name,...args){if(name==='@cloudbase/node-sdk')return {SYMBOL_CURRENT_ENV:'isolated-test',init:()=>({database:()=>({collection,command:{lt:value=>({op:'lt',value}),inc:value=>({op:'inc',value})}})})};return original.call(this,name,...args);};
-process.env.ENCRYPTION_KEY='a'.repeat(64);process.env.SESSION_SECRET='b'.repeat(64);process.env.USE_SHARED_CONFIG='false';process.env.TRIAL_ENABLED='enabled';process.env.TRIAL_SCOPE='site';
+process.env.ENCRYPTION_KEY='a'.repeat(64);process.env.SESSION_SECRET='b'.repeat(64);process.env.USE_SHARED_CONFIG='false';process.env.TRIAL_ENABLED='enabled';process.env.TRIAL_SCOPE='visitor';process.env.GLOBAL_DAILY_LIMIT='quota:30';
 const {route,safeHtml,benchmarkInput,documentInput}=require('../backend/server');Module._load=original;
 
 const req=token=>({headers:{authorization:'Bearer '+token,'x-forwarded-for':'isolated-trial'},socket:{remoteAddress:'test'}});
@@ -30,16 +30,33 @@ test('guest sessions persist browser identity and cannot bypass through registra
   await assert.rejects(()=>route(req(''),{username:'bypass',password:'test-password-123'},'/auth/register'),/免登录/);
   await assert.rejects(()=>route(req(a.slice(0,-8)+'forged'),{},'/state'),/登录/);
 });
-test('the site has exactly ten lifetime calls under concurrency, shared by all guests',async()=>{
+test('each guest gets ten lifetime calls independently, including concurrent requests',async()=>{
   for(const token of [a,b]){const {user}=JSON.parse(Buffer.from(token.split('.')[0],'base64url'));await collection('article_web_credentials').add({_id:user,encrypted:encrypt({tikhub:'test-only'},process.env.ENCRYPTION_KEY)});}
   const originalFetch=global.fetch;let calls=0;global.fetch=async()=>{calls++;return {ok:true,json:async()=>({code:200,data:{items:[]}})};};
   try{
-    const results=await Promise.allSettled(Array.from({length:16},(_,n)=>route(req(n%2?a:b),{keyword:'isolated'},'/research/search')));
-    assert.equal(results.filter(r=>r.status==='fulfilled').length,10);assert.equal(calls,10);
-    assert(results.filter(r=>r.status==='rejected').every(r=>r.reason.status===429));
-    const quota=await route(req(a),{},'/quota');assert.deepEqual(quota,{limit:10,used:10,remaining:0,scope:'site'});
-    assert.deepEqual(await route(req(b),{},'/quota'),quota);
-    const next=(await route(req(''),{deviceSecret:'3'.repeat(64)},'/guest/enter')).token;assert.equal((await route(req(next),{},'/quota')).remaining,0);
+    const first=await Promise.allSettled(Array.from({length:16},()=>route(req(a),{keyword:'isolated'},'/research/search')));
+    assert.equal(first.filter(r=>r.status==='fulfilled').length,10);assert.equal(calls,10);
+    assert(first.filter(r=>r.status==='rejected').every(r=>r.reason.status===429));
+    assert.deepEqual(await route(req(a),{},'/quota'),{limit:10,used:10,remaining:0,scope:'visitor'});
+    assert.equal((await route(req(b),{},'/quota')).remaining,10);
+    const second=await Promise.allSettled(Array.from({length:16},()=>route(req(b),{keyword:'isolated'},'/research/search')));
+    assert.equal(second.filter(r=>r.status==='fulfilled').length,10);assert.equal(calls,20);
+    const refreshed=(await route(req(''),{deviceSecret:'1'.repeat(64)},'/guest/enter')).token;assert.equal((await route(req(refreshed),{},'/quota')).remaining,0);
     assert.equal((await route(req(a),{},'/state')).tasks.length,0);
   }finally{global.fetch=originalFetch;}
+});
+test('daily site protection stops at thirty without charging the next visitor',async()=>{
+  const c=(await route(req(''),{deviceSecret:'3'.repeat(64)},'/guest/enter')).token,d=(await route(req(''),{deviceSecret:'4'.repeat(64)},'/guest/enter')).token;
+  for(const token of [c,d]){const {user}=JSON.parse(Buffer.from(token.split('.')[0],'base64url'));await collection('article_web_credentials').add({_id:user,encrypted:encrypt({tikhub:'test-only'},process.env.ENCRYPTION_KEY)});}
+  const originalFetch=global.fetch;let calls=0;global.fetch=async()=>{calls++;return {ok:true,json:async()=>({code:200,data:{items:[]}})};};
+  try{
+    const results=await Promise.allSettled(Array.from({length:10},()=>route(req(c),{keyword:'isolated'},'/research/search')));assert(results.every(r=>r.status==='fulfilled'));assert.equal(calls,10);
+    await assert.rejects(()=>route(req(d),{keyword:'isolated'},'/research/search'),e=>e.status===429);
+    assert.equal(calls,10);assert.equal((await route(req(d),{},'/quota')).remaining,10);
+  }finally{global.fetch=originalFetch;}
+});
+test('a new site day retains each visitor lifetime count',async()=>{
+  const RealDate=Date,day=new RealDate(Date.now()+86400000);
+  global.Date=class extends RealDate{constructor(...args){super(...(args.length?args:[day]));}static now(){return day.getTime();}};
+  try{assert.equal((await route(req(a),{},'/quota')).remaining,0);}finally{global.Date=RealDate;}
 });
