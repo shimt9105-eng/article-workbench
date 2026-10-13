@@ -8,6 +8,9 @@ const root=path.dirname(fileURLToPath(import.meta.url)),require=createRequire(im
 const clean=require('./backend/node_modules/sanitize-html'),{sanitizeHtml}=require('./backend/core');
 const source=process.argv[2]||path.join(os.homedir(),'Library/Application Support/编辑2号文章工作台/state.json');
 const destination=process.argv[3]||path.join(root,'private/history.json');
+// A frozen public snapshot can only be changed by an explicit curated update.
+try { if(JSON.parse(await readFile(destination,'utf8')).frozen)throw new Error('公开历史已固定为三篇，请单独导出后明确选择要公开的文章，不得批量覆盖'); }
+catch(e) { if(e.code!=='ENOENT')throw e; }
 const raw=await readFile(source),state=JSON.parse(raw),images=new Map();
 const assetDir=path.join(path.dirname(destination),'history-media');await mkdir(assetDir,{recursive:true});
 async function htmlWithImages(html){

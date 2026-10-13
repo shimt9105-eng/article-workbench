@@ -74,3 +74,10 @@ test('task switching uses loaded state and restores saved draft edits without lo
   const draft=await window.editor2.selectTask(id);assert.equal(draft.activeTaskId,id);assert.equal(draft.tasks.find(t=>t.id===id).draftInput.originalEssay,'最新随笔');assert.equal(draft.tasks.find(t=>t.id===id).draftInput.sourceDocContent,'已保存的资料');
   await assert.rejects(()=>window.editor2.selectTask('missing'),/尚未加载/);assert.equal(calls.length,0);
 });
+
+test('shared snapshots do not duplicate their owner task or replace private live edits',async()=>{
+  const examples=[{id:'history-isolated-task',originalTaskId:'isolated-task',readOnly:true,variants:[{modelId:'first',articleHtml:'公开快照'}]}];
+  const {window}=browserFixture(examples);
+  let s=await window.editor2.getState();assert.equal(s.tasks.length,1);assert.equal(s.tasks[0].id,'isolated-task');assert.equal(s.tasks[0].variants[0].articleHtml,'<h1>模型一原稿</h1>');assert.notEqual(s.tasks[0].readOnly,true);
+  s=await window.editor2.newDraft();assert.equal(s.tasks.length,2);assert.equal(s.tasks.find(t=>t.id==='history-isolated-task').readOnly,true);assert.equal(s.tasks.find(t=>t.id==='history-isolated-task').variants[0].articleHtml,'公开快照');
+});

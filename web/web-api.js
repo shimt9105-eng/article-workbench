@@ -23,7 +23,11 @@ function saveSelection(){sessionStorage.setItem('articleSelections',JSON.stringi
 function mergeSelection(s){s.activeTaskId=selections.taskId||s.activeTaskId;for(const t of s.tasks)t.activeModelId=selections[t.id]||t.activeModelId;currentState=s;return s;}
 let lastSnapshot=null;
 function persistCurrentSnapshot(){if(lastSnapshot&&currentState)window.saveWorkbenchSnapshot({...lastSnapshot,state:currentState});}
-async function readState(){const [s,history]=await Promise.all([api('/state'),historyReady]);s.tasks=[...s.tasks,...structuredClone(history)];if(!s.activeTaskId)s.activeTaskId=history[0]?.id||null;const merged=mergeSelection(s);persistCurrentSnapshot();return merged;}
+function mergeSharedHistory(owned, history) {
+  const ownIds = new Set(owned.map(t => t.id));
+  return [...owned, ...structuredClone(history).filter(t => !ownIds.has(t.originalTaskId || t.id))];
+}
+async function readState(){const [s,history]=await Promise.all([api('/state'),historyReady]);s.tasks=mergeSharedHistory(s.tasks,history);if(!s.activeTaskId)s.activeTaskId=history[0]?.id||null;const merged=mergeSelection(s);persistCurrentSnapshot();return merged;}
 function getState(){return readState();}
 const cacheIdentity=()=>window.WORKBENCH_API+':'+localStorage.getItem('articleGuestSecret');
 const snapshotDb=new Promise(resolve=>{
@@ -52,7 +56,7 @@ window.bootstrapWorkbench=async()=>{
     const packed=await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'))).json();
     result=JSON.parse(packed.json,(_,item)=>typeof item==='string'?item.replace(/workbench-image:(\d+):end/g,(marker,id)=>packed.images[Number(id)]??marker):item);
   }
-  result.state.tasks=[...result.state.tasks,...structuredClone(history)];
+  result.state.tasks=mergeSharedHistory(result.state.tasks,history);
   if(!result.state.activeTaskId)result.state.activeTaskId=history[0]?.id||null;
   return result;
 };
