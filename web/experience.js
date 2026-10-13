@@ -6,7 +6,6 @@ function fillRecommendModels(){const select=el('recommendModel'),value=select.va
 async function connection(){const c=await webApi('/config/status');window.wechatBound=!!c.wechat?.verifiedAt;showWechatBinding();window.refreshPublishButton();message('connectionStatus',`${c.shared?'默认使用共享 API 配置':'使用自己的 API 配置'} · ${c.quota?`总体验额度 ${c.quota.remaining} / 10 次剩余`:`每日额度 ${c.dailyLimit} 次`} · 搜索${c.hasSearch?'已配置':'未配置'} · ${c.wechat?`已绑定 ${c.wechat.name}（AppID 尾号 ${c.wechat.appSuffix}）`:'尚未绑定公众号'}`);el('unbindButton').classList.toggle('hidden',!c.wechat);return c;}
 window.openSettings=async()=>{el('settingsDialog').classList.remove('hidden');try{await connection();}catch(e){message('connectionStatus',e.message);}el('wxName').focus();};
 function showWechatBinding(){const status=el('wechatBindingStatus');status.textContent=window.wechatBound===undefined?'读取中':window.wechatBound?'已绑定':'未绑定';status.classList.toggle('bound',window.wechatBound===true);}
-el('settingsButton').onclick=window.openSettings;
 el('bindWechatButton').onclick=window.openSettings;
 el('closeSettings').onclick=()=>{el('settingsDialog').classList.add('hidden');window.pendingPublish=false;};
 let startupTouched=false;

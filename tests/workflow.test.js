@@ -167,3 +167,10 @@ test('task completion follows confirmed draft records within the same visitor',a
  await collection('article_web_drafts').add({_id:'uncertain-test-task',user,taskId:'test-task',status:'unknown',media_id:'uncertain'});
  assert.equal((await route(req(alice),{},'/state')).tasks.find(t=>t.id==='test-task').deliveryCompleted,false);
 });
+test('owner-confirmed historical completion does not create a WeChat draft receipt',async()=>{
+ await collection('article_web_tasks').doc('test-task').update({completionConfirmedByOwner:true});
+ const task=(await route(req(alice),{},'/state')).tasks.find(t=>t.id==='test-task');
+ assert.equal(task.deliveryCompleted,true);
+ assert.equal((await collection('article_web_drafts').where({taskId:'test-task',status:'success'}).get()).data.length,0);
+ await collection('article_web_tasks').doc('test-task').update({completionConfirmedByOwner:false});
+});
