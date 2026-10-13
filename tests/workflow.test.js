@@ -77,12 +77,14 @@ test('initial and feedback generation retain the exact fixed System and guard co
     while(!requestBody)await new Promise(r=>setImmediate(r));
     assert.equal(requestBody.messages[0].content,require('../backend/core').systemPrompt());
     const input=JSON.parse(requestBody.messages[1].content);assert.equal(input.固定System依据.原始随笔,'我自己的实际观点。');assert.equal(input.任务模式,'initial');
+    assert.match(input.写作处理原则,/随笔决定文章主线/);assert.match(input.写作处理原则,/禁止整段照搬/);
     await assert.rejects(()=>route(req(alice),{taskId:created.taskId,modelId:'qa-text'},'/variant/generate'),/正在生成/);
     release();await generation;
     const latest=(await collection('article_web_variants').doc(digest(created.taskId+':qa-text')).get()).data[0];assert(latest.completedAttemptId);assert.equal(latest.activeAttemptId,null);assert(latest.articleHtml.includes('真实文章'));
     const attempts=latest.completedAttemptId;
     await route(req(alice),{taskId:created.taskId,modelId:'qa-text',instruction:'结尾更具体',selectedText:'用户原句'},'/variant/generate');
     const feedback=JSON.parse(requestBody.messages[1].content);assert.equal(feedback.任务模式,'revise');assert.equal(feedback.用户选中的文章文本,'用户原句');assert.equal(feedback.固定System依据.原始随笔,'我自己的实际观点。');
+    assert.equal(feedback.写作处理原则,input.写作处理原则);assert.match(feedback.写作处理原则,/修改时同样检查并重写/);
     const revised=(await collection('article_web_variants').doc(digest(created.taskId+':qa-text')).get()).data[0];assert.notEqual(revised.completedAttemptId,attempts);assert(revised.comments.some(c=>c.text==='结尾更具体'));
   }finally{global.fetch=previousFetch;}
 });
