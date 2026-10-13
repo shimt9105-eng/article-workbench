@@ -15,6 +15,7 @@ let editSaveTimer = null;
 let pendingTextEdit = null;
 let textSavePromise = null;
 let variantSwitching = false;
+let taskSwitching = false;
 
 function activeTask() {
   return appState?.tasks?.find((task) => task.id === appState.activeTaskId) || null;
@@ -143,7 +144,7 @@ function scheduleTextSave(doc) {
 }
 
 async function commitTextSave() {
-  if(textSavePromise)await textSavePromise;
+  while(textSavePromise)await textSavePromise;
   const payload = pendingTextEdit;
   if (!payload) return;
   clearTimeout(editSaveTimer);
@@ -412,8 +413,9 @@ ui.newTaskButton.addEventListener("click", async () => {
 
 ui.taskList.addEventListener("click", async (event) => {
   const button = event.target.closest("[data-task-id]");
-  if (!button) return;
+  if (!button || taskSwitching || variantSwitching || button.dataset.taskId===activeTask()?.id) return;
   if(researchBusy){toast('搜索或推荐正在进行，请完成后再切换任务');return;}
+  taskSwitching=true;
   try{
     await commitTextSave();if(pendingTextEdit)throw new Error('正文尚未保存，请稍后重试');
     await window.flushDraft?.();
@@ -421,7 +423,7 @@ ui.taskList.addEventListener("click", async (event) => {
     ui.addModelPanel.classList.add("hidden");render();
     await window.restoreTaskInputs?.(activeTask());
     await window.setWorkflowStep(activeTask()?.systemLocked===false?'research':'write');
-  }catch(e){toast(e.message,12000);}
+  }catch(e){toast(e.message,12000);}finally{taskSwitching=false;}
 });
 
 ui.addModelButton.addEventListener("click", async () => {
@@ -467,7 +469,7 @@ ui.confirmAddModelButton.addEventListener("click", async () => {
 ui.variantSwitcher.addEventListener("click", async (event) => {
   const button = event.target.closest("[data-model-id]");
   const task = activeTask();
-  if (!button || !task || variantSwitching || button.dataset.modelId===task.activeModelId) return;
+  if (!button || !task || variantSwitching || taskSwitching || button.dataset.modelId===task.activeModelId) return;
   variantSwitching=true;
   try{
     await commitTextSave();

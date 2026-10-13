@@ -42,9 +42,9 @@ window.restoreUploadedDocument=data=>{
 };
 window.editor2={
   newDraft:async()=>{const taskId=crypto.randomUUID().replaceAll('-','');const r=await api('/task/draft/new',{taskId});selections.taskId=r.taskId;saveSelection();return getState();},
-  saveDraft:async p=>{const result=await api('/task/draft/save',{...p,...(uploadedDocument||{})});const t=currentState?.tasks.find(t=>t.id===p.taskId);if(t){t.draftRevision=result.revision;t.updatedAt=result.updatedAt;t.title=result.title;}return result;},
+  saveDraft:async p=>{const input={...p,...(uploadedDocument||{})};const result=await api('/task/draft/save',input);const t=currentState?.tasks.find(t=>t.id===p.taskId);if(t){t.draftInput=structuredClone(input);t.draftRevision=result.revision;t.updatedAt=result.updatedAt;t.title=result.title;}return result;},
   getState,listModels:()=>api('/models'),
-  selectTask:async taskId=>{selections.taskId=taskId;saveSelection();return getState();},
+  selectTask:async taskId=>{if(!currentState?.tasks.some(t=>t.id===taskId))throw new Error('任务尚未加载，请刷新任务列表');selections.taskId=taskId;saveSelection();return mergeSelection(currentState);},
   selectVariant:async(taskId,modelId)=>{
     const t=currentState?.tasks.find(t=>t.id===taskId);if(!t||!t.variants?.some(v=>v.modelId===modelId))throw new Error('模型版本尚未加载，请重新打开任务');
     selections.taskId=taskId;selections[taskId]=modelId;saveSelection();return mergeSelection(currentState);

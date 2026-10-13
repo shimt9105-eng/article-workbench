@@ -4,12 +4,12 @@ const fs=require('node:fs');
 const path=require('node:path');
 const vm=require('node:vm');
 
-function browserFixture(){
+function browserFixture(historyTasks=[]){
   const calls=[],elements={sourceFile:{value:''},sourceFileStatus:{textContent:''},clearUpload:{classList:{add(){}}}},storage={getItem(){return null;},setItem(){}};
   const window={WORKBENCH_API:'https://isolated.invalid',dispatchEvent(){}};
   let fixtureTask={id:'isolated-task',variants:[{modelId:'first',articleHtml:'<h1>模型一原稿</h1>'},{modelId:'second',articleHtml:'<h1>模型二原稿</h1>'}]};
   const fetch=async(url,options)=>{
-    if(String(url).endsWith('history.json'))return {ok:true,json:async()=>({tasks:[]})};
+    if(String(url).endsWith('history.json'))return {ok:true,json:async()=>({tasks:historyTasks})};
     const route=String(url).replace(window.WORKBENCH_API,'');const payload=JSON.parse(options.body);calls.push({route,payload});
     if(route==='/task/draft/new')fixtureTask={id:payload.taskId,systemLocked:false,draftRevision:0,draftInput:{},variants:[]};
     const data=route==='/task/draft/new'?{taskId:payload.taskId}:route==='/task/draft/save'?{revision:payload.revision+1,title:'真实主题 · 任务',updatedAt:'2026-10-12'}:route==='/quota'?{remaining:10}:route==='/task/create'?{taskId:'isolated-task'}:route==='/state'?{tasks:[fixtureTask]}:{ok:true};
@@ -64,4 +64,13 @@ test('switching loaded model versions needs no API calls and preserves independe
   for(const modelId of ['second','first','second']){const next=await window.editor2.selectVariant('isolated-task',modelId);assert.equal(next.tasks[0].activeModelId,modelId);assert.equal(next.tasks[0].variants[0].articleHtml,firstHtml);}
   assert.equal(calls.length,0);
   await assert.rejects(()=>window.editor2.selectVariant('isolated-task','missing'),/尚未加载/);assert.equal(calls.length,0);
+});
+
+test('task switching uses loaded state and restores saved draft edits without loading tasks again',async()=>{
+  const {window,calls}=browserFixture([{id:'history-task',readOnly:true,variants:[{modelId:'history-model',articleHtml:'历史文章'}]}]);
+  const s=await window.editor2.newDraft(),id=s.activeTaskId;window.setUploadedDocument({sourceDocTitle:'保存的 Word.docx',sourceDocContent:'已保存的资料'});
+  await window.editor2.saveDraft({taskId:id,revision:0,originalEssay:'最新随笔',researchKeyword:'新关键词'});calls.length=0;
+  const history=await window.editor2.selectTask('history-task');assert.equal(history.activeTaskId,'history-task');assert.equal(history.tasks.find(t=>t.id==='history-task').variants[0].articleHtml,'历史文章');
+  const draft=await window.editor2.selectTask(id);assert.equal(draft.activeTaskId,id);assert.equal(draft.tasks.find(t=>t.id===id).draftInput.originalEssay,'最新随笔');assert.equal(draft.tasks.find(t=>t.id===id).draftInput.sourceDocContent,'已保存的资料');
+  await assert.rejects(()=>window.editor2.selectTask('missing'),/尚未加载/);assert.equal(calls.length,0);
 });

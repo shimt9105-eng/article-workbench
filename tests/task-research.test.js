@@ -5,7 +5,7 @@ const vm=require('node:vm');
 test('task switching restores locked research and clears it for another task without any API calls',async()=>{
   const source=fs.readFileSync(require('node:path').join(__dirname,'../web/experience.js'),'utf8');
   const elements=new Map();function el(id){if(!elements.has(id))elements.set(id,{value:'',innerHTML:'',textContent:'',disabled:false,classList:{toggle(name,on){this[name]=on;}},querySelectorAll(){return [];}});return elements.get(id);}
-  const c=vm.createContext({window:{restoreUploadedDocument(){},setBenchmarkDocument(){}},el,search:null,recommendations:[],draftRestoring:false,sourceUploadAttempt:0,current:null,activeTask(){return c.current;},escapeHtml:v=>String(v||'').replaceAll('<','&lt;'),applyTrialQuota(){},fillRecommendModels(){},message:(id,v)=>{el(id).textContent=v;}});
+  const c=vm.createContext({window:{restoreUploadedDocument(){},setBenchmarkDocument(){}},el,search:null,recommendations:[],draftRestoring:false,draftChangeVersion:0,draftSavedVersion:0,sourceUploadAttempt:0,current:null,activeTask(){return c.current;},escapeHtml:v=>String(v||'').replaceAll('<','&lt;'),applyTrialQuota(){},fillRecommendModels(){},message:(id,v)=>{el(id).textContent=v;}});
   vm.runInContext(source.slice(source.indexOf('function articleCard('),source.indexOf('async function recommendSearch(')),c);
   vm.runInContext(source.slice(source.indexOf('window.restoreTaskInputs='),source.indexOf('window.startNamedTask=')),c);
   const articles=[1,2,3].map(id=>({id:String(id),title:'文章'+id,url:'https://mp.weixin.qq.com/s?article='+id,account:'公众号',reason:'真实推荐理由'}));

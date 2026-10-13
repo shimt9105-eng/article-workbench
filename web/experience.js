@@ -133,7 +133,7 @@ el('workflowNav').addEventListener('keydown',e=>{if(!['ArrowLeft','ArrowRight'].
 
 window.setWorkflowStep(sessionStorage.getItem('articleStep')||'write');
 
-let draftTimer=null,draftRestoring=false,draftSaveChain=Promise.resolve(),draftCreation=null,namedTaskBusy=false;
+let draftTimer=null,draftRestoring=false,draftSaveChain=Promise.resolve(),draftCreation=null,namedTaskBusy=false,draftChangeVersion=0,draftSavedVersion=0;
 function currentDraftInput(){return {modelIds:selectedModelIds(),benchmarkUrl:el('benchmarkInput').value,originalEssay:el('essayInput').value,researchKeyword:el('keywordInput').value,researchGoal:el('researchGoal').value,recommendModel:el('recommendModel').value};}
 window.ensureDraftTask=async()=>{
   if(activeTask()?.systemLocked===false)return;
@@ -144,16 +144,18 @@ window.flushDraft=async()=>{
   clearTimeout(draftTimer);draftTimer=null;
   if(window.wordUploadBusy)throw new Error('Word 正在读取，请读取完成后再切换任务');
   if(draftRestoring||window.draftGenerationBusy)return;
+  if(draftChangeVersion===draftSavedVersion)return draftSaveChain;
   // Serialize saves so a later edit cannot be overwritten by an earlier response.
-  const p=currentDraftInput();
+  const p=currentDraftInput(),changeVersion=draftChangeVersion;
   const saving=draftSaveChain.catch(()=>{}).then(async()=>{
-    if(activeTask()?.systemLocked!==false)return;
+    if(activeTask()?.systemLocked!==false||draftSavedVersion>=changeVersion)return;
     const t=activeTask();const result=await editor2.saveDraft({...p,taskId:t.id,revision:t.draftRevision});
-    renderTasks();el('articleTitle').textContent=result.title;el('saveStatus').textContent='草稿已保存';
+    draftSavedVersion=changeVersion;renderTasks();el('articleTitle').textContent=result.title;el('saveStatus').textContent='草稿已保存';
   });draftSaveChain=saving;return saving;
 };
 window.queueDraftSave=()=>{
   if(draftRestoring||window.draftGenerationBusy)return;
+  draftChangeVersion++;
   clearTimeout(draftTimer);draftTimer=setTimeout(async()=>{
     try{if(window.wordUploadBusy)return;if(creating||activeTask()?.systemLocked===false){await window.ensureDraftTask();await window.flushDraft();}}
     catch(e){el('saveStatus').textContent='草稿保存失败';toast(e.message,12000);}
@@ -170,7 +172,7 @@ window.restoreTaskInputs=async t=>{
     window.restoreUploadedDocument(p);window.setBenchmarkDocument(null);
     message('benchmarkStatus','');renderResearch(t);message('researchStatus',search?`已保存 ${search.articles.length} 篇搜索结果、${recommendations.length} 篇 AI 推荐${t?.systemLocked!==false?' · 此任务的对标已锁定':''}`:t?.benchmarkUrl?'已恢复本任务的对标文章；没有保存搜索结果。':'');
     if(t?.systemLocked===false)el('saveStatus').textContent='草稿已保存';
-  }finally{draftRestoring=false;}
+  }finally{draftRestoring=false;draftChangeVersion=0;draftSavedVersion=0;}
 };
 window.startNamedTask=async()=>{
   if(researchBusy){toast('搜索或推荐正在进行，请完成后再新建任务');return;}
