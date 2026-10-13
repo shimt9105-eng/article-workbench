@@ -22,6 +22,7 @@ async function callModel(model, input) {
     endpoint = `${model.baseUrl}/chat/completions`;
     headers.Authorization = `Bearer ${model.apiKey}`;
     body = { model: model.name, messages: [{ role: "system", content: systemPrompt() }, { role: "user", content: input }], response_format: { type: "json_object" } };
+    if (/^claude(?:[-_]|$)/i.test(model.name)) body.max_tokens = 12000;
   } else if (model.protocol === "OpenAI Responses") {
     endpoint = `${model.baseUrl}/responses`;
     headers.Authorization = `Bearer ${model.apiKey}`;

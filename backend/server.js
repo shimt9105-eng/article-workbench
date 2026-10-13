@@ -11,7 +11,7 @@ const {callModel}=require('./model');
 const {placeSourceImages}=require('./source-images');
 const {parseSearchResponse,recommend}=require('./research');
 const {articleUrl,readArticle}=require('./benchmark');
-const VERSION='2.1.4', INITIAL='根据固定 System 依据，把原始随笔润色成一篇完整的微信公众号文章。保留真实观点与个人表达，不虚构信息。';
+const VERSION='2.1.5', INITIAL='根据固定 System 依据，把原始随笔润色成一篇完整的微信公众号文章。保留真实观点与个人表达，不虚构信息。';
 const PREFIX='article_web_', KEY=process.env.ENCRYPTION_KEY||'', SIGN=process.env.SESSION_SECRET||'';
 const app=cloudbase.init({env:process.env.CLOUDBASE_ENV_ID||cloudbase.SYMBOL_CURRENT_ENV,...(process.env.CLOUDBASE_APIKEY?{accessKey:process.env.CLOUDBASE_APIKEY}:{})});
 const db=app.database();
