@@ -39,6 +39,11 @@ function activeVariant(task) {
   return variants.find((variant) => variant.modelId === task?.activeModelId) || variants[0] || null;
 }
 
+function visibleModelSource(source) {
+  const label = String(source || "").trim();
+  return /^micu$/i.test(label) ? "" : label;
+}
+
 function escapeHtml(value) {
   return String(value || "").replace(/[&<>'"]/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[character]);
 }
@@ -209,7 +214,7 @@ function renderModels() {
   const selected = new Set([...ui.modelOptions.querySelectorAll('input[type="checkbox"]:checked')].map((input) => input.value));
   ui.modelOptions.innerHTML = availableModels.map((model) => `<label class="model-check">
     <input type="checkbox" value="${escapeHtml(model.id)}" ${selected.has(model.id) ? "checked" : ""}>
-    <span><strong>${escapeHtml(model.name)}</strong>${model.source ? `<small>${escapeHtml(model.source)}</small>` : ""}</span>
+    <span><strong>${escapeHtml(model.name)}</strong>${visibleModelSource(model.source) ? `<small>${escapeHtml(visibleModelSource(model.source))}</small>` : ""}</span>
   </label>`).join("");
 }
 
@@ -235,7 +240,7 @@ function renderAddModelOptions() {
   }
   ui.addModelOptions.innerHTML = models.map((model) => `<label class="model-check">
     <input type="checkbox" value="${escapeHtml(model.id)}" ${selected.has(model.id) ? "checked" : ""}>
-    <span><strong>${escapeHtml(model.name)}</strong>${model.source ? `<small>${escapeHtml(model.source)}</small>` : ""}</span>
+    <span><strong>${escapeHtml(model.name)}</strong>${visibleModelSource(model.source) ? `<small>${escapeHtml(visibleModelSource(model.source))}</small>` : ""}</span>
   </label>`).join("");
 }
 
@@ -382,7 +387,7 @@ function renderActive() {
   const variant = activeVariant(task);
   ui.articleTitle.textContent = task.title;
   ui.articleMeta.textContent = `${variant?.modelName || "模型待定"} · System 已锁定 · ${variant?.status === "processing" ? "正在生成" : "网页预览"}`;
-  ui.variantSwitcher.innerHTML = variants.map((item) => `<button class="variant-tab ${item.modelId === variant?.modelId ? "active" : ""}" data-model-id="${escapeHtml(item.modelId)}">${escapeHtml((item.source ? item.source + " / " : "") + item.modelName)}${item.status === "processing" ? " · 生成中" : ""}</button>`).join("");
+  ui.variantSwitcher.innerHTML = variants.map((item) => `<button class="variant-tab ${item.modelId === variant?.modelId ? "active" : ""}" data-model-id="${escapeHtml(item.modelId)}">${escapeHtml((visibleModelSource(item.source) ? visibleModelSource(item.source) + " / " : "") + item.modelName)}${item.status === "processing" ? " · 生成中" : ""}</button>`).join("");
   ui.modelToolbar.classList.remove("hidden");
   ui.variantSwitcher.classList.toggle("hidden", variants.length === 0);
   ui.articlePreview.srcdoc = previewDocument(task.title, variant?.articleHtml || "<p>文章尚未生成，可追加已启用模型继续创作。</p>", task.readOnly);
