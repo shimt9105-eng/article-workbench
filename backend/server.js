@@ -11,7 +11,7 @@ const {callModel}=require('./model');
 const {placeSourceImages}=require('./source-images');
 const {parseSearchResponse,recommend}=require('./research');
 const {articleUrl,readArticle}=require('./benchmark');
-const VERSION='2.1.3', INITIAL='根据固定 System 依据，把原始随笔润色成一篇完整的微信公众号文章。保留真实观点与个人表达，不虚构信息。';
+const VERSION='2.1.4', INITIAL='根据固定 System 依据，把原始随笔润色成一篇完整的微信公众号文章。保留真实观点与个人表达，不虚构信息。';
 const PREFIX='article_web_', KEY=process.env.ENCRYPTION_KEY||'', SIGN=process.env.SESSION_SECRET||'';
 const app=cloudbase.init({env:process.env.CLOUDBASE_ENV_ID||cloudbase.SYMBOL_CURRENT_ENV,...(process.env.CLOUDBASE_APIKEY?{accessKey:process.env.CLOUDBASE_APIKEY}:{})});
 const db=app.database();
@@ -76,7 +76,9 @@ async function state(user){
     const r=await col('variants').where({user,taskId:t._id}).limit(100).get();
     const {_id,user:owner,...data}=t;
     const variants=(r.data||[]).map(publicVariant);
-    return {...data,id:_id,variants,activeModelId:variants[0]?.modelId,status:variants.some(v=>v.status==='processing')?'processing':'idle'};
+    const savedSearch=t.research?.searchId?await get('searches',t.research.searchId):null;
+    const research={...(t.research||{}),...(savedSearch?.user===owner?{search:{id:savedSearch._id,keyword:savedSearch.keyword,articles:savedSearch.articles||[],recommendations:savedSearch.recommendations||[]}}:{})};
+    return {...data,research,id:_id,variants,activeModelId:variants[0]?.modelId,status:variants.some(v=>v.status==='processing')?'processing':'idle'};
   }));
   return {appVersion:VERSION,schemaVersion:1,revision:0,tasks,activeTaskId:tasks[0]?.id||null};
 }
@@ -262,16 +264,25 @@ async function route(req,p,path){
   if(path==='/wechat/unbind'){const c=await credentials(user);delete c.wechat;await patch('credentials',user,{encrypted:encrypt(c,KEY)});return {ok:true};}
   if(path==='/research/search'){
     const keyword=String(p.keyword||'').trim().slice(0,100);if(!keyword)throw new UserError('请输入搜索主题');
+    const researchTask=p.taskId?await task(user,p.taskId):null;if(researchTask?.systemLocked!==false&&researchTask)throw new UserError('此任务已锁定，搜索记录仅供查看；请新建任务搜索',409);
     const c=await config(user);if(!c.tikhub)throw new UserError('请在连接设置中配置 TikHub API Key');await usage(user);
       const r=await fetch('https://api.tikhub.io/api/v1/wechat_search/v2/fetch_search',{method:'POST',headers:{Authorization:`Bearer ${c.tikhub}`,'Content-Type':'application/json'},body:JSON.stringify({keyword,business_type:'article',sort:'hot',publish_time:'all',offset:0,cursor:null,raw:false}),signal:AbortSignal.timeout(50000)});
     if(!r.ok)throw new UserError(`搜索服务失败（HTTP ${r.status}），请检查搜索 Key`,502);let result;try{result=await r.json();}catch{throw new UserError('搜索服务返回的数据格式异常，请稍后重试',502);}
     let parsed;try{parsed=parseSearchResponse(result);}catch(e){throw new UserError(e.message,502);}
-    const id=uid();await add('searches',id,{user,keyword,...parsed,createdAt:nowIso()});return {id,keyword,...parsed};
+    const id=uid();await add('searches',id,{user,taskId:researchTask?._id||null,keyword,goal:String(p.goal||'').slice(0,2000),modelId:String(p.modelId||'').slice(0,100),...parsed,createdAt:nowIso()});
+    if(researchTask)await patch('tasks',researchTask._id,{research:{searchId:id,keyword,goal:String(p.goal||'').slice(0,2000),modelId:String(p.modelId||'').slice(0,100),selectedUrl:researchTask.draftInput?.benchmarkUrl||''}});return {id,keyword,...parsed};
   }
   if(path==='/research/recommend'){
     const s=await get('searches',p.searchId);if(!s||s.user!==user)throw new UserError('搜索结果不存在',404);
+    if(s.taskId){const t=await task(user,s.taskId);if(t.systemLocked!==false||t.research?.searchId!==s._id)throw new UserError('任务搜索记录已更新，请重新打开任务',409);}
     if(!s.articles.length)return {recommendations:[]};await usage(user);const m=await model(user,p.modelId);
-    const recommendations=await recommend(m,s.keyword,String(p.goal||'').slice(0,2000),s.articles);await patch('searches',s._id,{recommendations,modelId:m.id,recommendedAt:nowIso()});return {recommendations};
+    const recommendations=await recommend(m,s.keyword,String(p.goal||'').slice(0,2000),s.articles);await patch('searches',s._id,{recommendations,modelId:m.id,recommendedAt:nowIso(),goal:String(p.goal||'').slice(0,2000)});if(s.taskId){const t=await task(user,s.taskId);if(t.research?.searchId===s._id)await patch('tasks',s.taskId,{research:{...t.research,goal:String(p.goal||'').slice(0,2000),modelId:m.id}});}return {recommendations};
+  }
+  if(path==='/research/select'){
+    const t=await task(user,p.taskId);if(t.systemLocked!==false)throw new UserError('此任务的对标已锁定，请新建文章任务',409);
+    const s=await get('searches',p.searchId);if(!s||s.user!==user||t.research?.searchId!==s._id)throw new UserError('任务搜索记录已更新，请重新打开任务',409);
+    const selected=s.articles.find(a=>a.id===p.articleId);if(!selected)throw new UserError('请选择真实搜索结果');
+    if(!await claim('tasks',t._id,'draftRevision',t.draftRevision,{draftInput:{...t.draftInput,benchmarkUrl:selected.url},draftRevision:t.draftRevision+1,research:{...t.research,selectedUrl:selected.url,selectedArticle:selected,selectedAt:nowIso()}}))throw new UserError('任务在另一窗口已更新，请重新打开后选择',409);return {ok:true};
   }
   if(path==='/benchmark/read')return benchmarkInput(p,user);
   if(path==='/document/read')return documentInput(p);
@@ -294,7 +305,8 @@ async function route(req,p,path){
     if(!String(p.originalEssay||'').trim())throw new UserError('请填写随笔或初步想法');
     const draft=p.taskId?await task(user,p.taskId):null;if(draft&&draft.systemLocked!==false)throw new UserError('此任务已生成，请打开任务继续修改',409);
     const chosen=await Promise.all(ids.map(id=>model(user,id)));const [doc,b]=await Promise.all([documentInput(p),benchmarkInput(p,user)]),id=draft?draft._id:uid();
-    const data={...doc,...b,benchmarkUrl:String(p.benchmarkUrl||''),originalEssay:String(p.originalEssay).slice(0,120000),systemLocked:true,updatedAt:nowIso(),schemaVersion:1};
+    const research={...(draft?.research||{}),keyword:draft?.draftInput?.researchKeyword||draft?.research?.keyword||'',goal:draft?.draftInput?.researchGoal||draft?.research?.goal||'',modelId:draft?.draftInput?.recommendModel||draft?.research?.modelId||'',selectedUrl:String(p.benchmarkUrl||'')};
+    const data={...doc,...b,research,benchmarkUrl:String(p.benchmarkUrl||''),originalEssay:String(p.originalEssay).slice(0,120000),systemLocked:true,updatedAt:nowIso(),schemaVersion:1};
     if(draft){if(!await claim('tasks',id,'draftRevision',p.draftRevision,{...data,draftInput:null,draftRevision:draft.draftRevision+1}))throw new UserError('任务在另一窗口已更新，请重新打开后生成',409);}
     else await add('tasks',id,{user,title:formatTaskTimestamp(),...data,createdAt:nowIso()});
     for(const m of chosen)await add('variants',digest(id+':'+m.id),{user,taskId:id,modelId:m.id,modelName:m.name,source:m.source,status:'idle',articleHtml:'',comments:[],revision:0,activeAttemptId:null,completedAttemptId:null});

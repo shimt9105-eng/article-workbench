@@ -402,6 +402,7 @@ ui.newTaskButton.addEventListener("click", async () => {
 ui.taskList.addEventListener("click", async (event) => {
   const button = event.target.closest("[data-task-id]");
   if (!button) return;
+  if(researchBusy){toast('搜索或推荐正在进行，请完成后再切换任务');return;}
   try{
     await commitTextSave();if(pendingTextEdit)throw new Error('正文尚未保存，请稍后重试');
     await window.flushDraft?.();

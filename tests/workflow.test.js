@@ -131,3 +131,28 @@ test('named drafts save before generation, keep Word and research inputs, and lo
   await assert.rejects(()=>route(req(alice),{...p,revision:2},'/task/draft/save'),/已锁定/);
   await assert.rejects(()=>route(req(alice),{...p,draftRevision:2},'/task/create'),/已生成/);
 });
+
+
+test('research results, AI recommendations and selected benchmark belong to their task and survive locking',async()=>{
+  const user=digest('qa_alice'),id='c'.repeat(32),other='d'.repeat(32);
+  await route(req(alice),{taskId:id},'/task/draft/new');await route(req(alice),{taskId:other},'/task/draft/new');
+  const credential=(await collection('article_web_credentials').doc(user).get()).data[0];const config=decrypt(credential.encrypted,process.env.ENCRYPTION_KEY);await collection('article_web_credentials').doc(user).update({encrypted:encrypt({...config,tikhub:'isolated'},process.env.ENCRYPTION_KEY)});
+  const previousFetch=global.fetch;
+  global.fetch=async url=>url.includes('tikhub')?{ok:true,json:async()=>({code:200,data:{items:[{doc_url:'https://mp.weixin.qq.com/s?record=1',title:'真实对标',desc:'真实摘要'}]}})}:{ok:true,json:async()=>({choices:[{message:{content:JSON.stringify({recommendations:[{id:'1',reason:'符合实际方向'}]})}}]})};
+  try{
+    const s=await route(req(alice),{taskId:id,keyword:'亚马逊 AI',goal:'实际方向',modelId:'qa-text'},'/research/search');
+    const rec=await route(req(alice),{searchId:s.id,modelId:'qa-text',goal:'实际方向'},'/research/recommend');assert.equal(rec.recommendations.length,1);
+    await assert.rejects(()=>route(req(bob),{taskId:id,searchId:s.id,articleId:'1'},'/research/select'),/不存在/);
+    await assert.rejects(()=>route(req(alice),{taskId:other,searchId:s.id,articleId:'1'},'/research/select'),/更新/);
+    await route(req(alice),{taskId:id,searchId:s.id,articleId:'1'},'/research/select');
+    const before=(await route(req(alice),{},'/state')).tasks.find(t=>t.id===id);assert.equal(before.research.search.articles.length,1);assert.equal(before.research.search.recommendations.length,1);assert.equal(before.research.selectedArticle.title,'真实对标');
+    assert.equal(before.draftInput.benchmarkUrl,s.articles[0].url);
+    const p={taskId:id,revision:1,modelIds:['qa-text'],benchmarkUrl:s.articles[0].url,originalEssay:'真实随笔',researchKeyword:'亚马逊 AI',researchGoal:'实际方向',recommendModel:'qa-text'};
+    await route(req(alice),p,'/task/draft/save');await route(req(alice),{...p,draftRevision:2,benchmarkContent:'真实全文'.repeat(40)},'/task/create');
+    const locked=(await route(req(alice),{},'/state')).tasks.find(t=>t.id===id);assert.deepEqual(locked.research.search,before.research.search);assert.equal(locked.research.selectedUrl,s.articles[0].url);assert.equal(locked.research.goal,'实际方向');
+    assert.equal((await route(req(alice),{},'/state')).tasks.find(t=>t.id===other).research.search,undefined);
+    await assert.rejects(()=>route(req(alice),{taskId:id,keyword:'改掉'},'/research/search'),/锁定/);
+    await assert.rejects(()=>route(req(alice),{taskId:id,searchId:s.id,articleId:'1'},'/research/select'),/锁定/);
+    await assert.rejects(()=>route(req(alice),{searchId:s.id,modelId:'qa-text'},'/research/recommend'),/更新/);
+  }finally{global.fetch=previousFetch;await collection('article_web_credentials').doc(user).update({encrypted:credential.encrypted});}
+});

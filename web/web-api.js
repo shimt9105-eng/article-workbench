@@ -13,7 +13,7 @@ window.webApi=async function(path,payload={}){
   const token=localStorage.getItem('articleGuestSession')||sessionStorage.getItem('articleSession');
   const response=await fetch(window.WORKBENCH_API+path,{method:'POST',headers:{'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{})},body:JSON.stringify(payload),signal:AbortSignal.timeout(570000)});
   let data;try{data=await response.json();}catch{throw new Error('连接中断；请查看任务最新状态后再决定是否重试');}
-  if(!['/guest/enter','/quota','/state','/models','/config/status','/task/draft/new','/task/draft/save'].includes(path))window.dispatchEvent(new Event('quotaChanged'));
+  if(!['/guest/enter','/quota','/state','/models','/config/status','/task/draft/new','/task/draft/save','/research/select'].includes(path))window.dispatchEvent(new Event('quotaChanged'));
   if(!response.ok){if(response.status===401&&!path.startsWith('/auth/'))window.dispatchEvent(new Event('sessionExpired'));throw new Error(data.error||'操作失败');}
   return data;
 };
