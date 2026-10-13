@@ -8,19 +8,35 @@ window.openSettings=async()=>{el('settingsDialog').classList.remove('hidden');tr
 el('settingsButton').onclick=window.openSettings;
 el('closeSettings').onclick=()=>{el('settingsDialog').classList.add('hidden');window.pendingPublish=false;};
 async function entered(){
-  el('authPanel').classList.add('hidden');el('workspace').classList.remove('hidden');el('workflowNav').classList.remove('hidden');message('accountLabel','免登录体验 · 本浏览器独立保存');window.completeLogin();
-  await authReady;appState=await editor2.getState();creating=!appState.tasks.length;render();await refreshModels();fillRecommendModels();await window.restoreTaskInputs?.(activeTask());
-  try{const c=await connection();if(!c.models.length)toast('请先配置写作模型');}catch(e){toast(e.message);}
+  const boot=await window.bootstrapWorkbench();
+  appState=boot.state;availableModels=boot.models;
+  window.trialRemaining=boot.quota.remaining;
+  el('authPanel').classList.add('hidden');el('workspace').classList.remove('hidden');el('workflowNav').classList.remove('hidden');message('accountLabel','免登录体验 · 本浏览器独立保存');
+  renderModels();creating=!appState.tasks.length;render();fillRecommendModels();await window.restoreTaskInputs?.(activeTask());
+  showQuota(boot.quota);window.completeLogin();
+  requestAnimationFrame(()=>{el('workspace').dataset.readyMs=String(Math.round(performance.now()));});
 }
+function validGuestSession(){
+  try{const token=localStorage.getItem('articleGuestSession');const session=JSON.parse(atob(token.split('.')[0].replace(/-/g,'+').replace(/_/g,'/')));return session.kind==='guest'&&session.exp>Date.now()+60000;}catch{return false;}
+}
+let entering=null;
 async function enterGuest(){
-  el('guestRetry').classList.add('hidden');message('authError','正在进入免登录体验…');
-  try{let deviceSecret=localStorage.getItem('articleGuestSecret');if(!deviceSecret){deviceSecret=Array.from(crypto.getRandomValues(new Uint8Array(32)),n=>n.toString(16).padStart(2,'0')).join('');localStorage.setItem('articleGuestSecret',deviceSecret);}
-    const r=await webApi('/guest/enter',{deviceSecret});localStorage.setItem('articleGuestSession',r.token);await entered();await refreshQuota();
-  }catch(e){el('authPanel').classList.remove('hidden');el('workspace').classList.add('hidden');el('workflowNav').classList.add('hidden');message('authError',e.message);el('guestRetry').classList.remove('hidden');}
+  if(entering)return entering;
+  entering=(async()=>{
+    el('guestRetry').classList.add('hidden');message('authError','正在进入免登录体验…');
+    try{
+      if(!validGuestSession()){
+        let deviceSecret=localStorage.getItem('articleGuestSecret');if(!deviceSecret){deviceSecret=Array.from(crypto.getRandomValues(new Uint8Array(32)),n=>n.toString(16).padStart(2,'0')).join('');localStorage.setItem('articleGuestSecret',deviceSecret);}
+        const r=await webApi('/guest/enter',{deviceSecret});localStorage.setItem('articleGuestSession',r.token);
+      }
+      await entered();
+    }catch(e){el('authPanel').classList.remove('hidden');el('workspace').classList.add('hidden');el('workflowNav').classList.add('hidden');message('authError',e.message);el('guestRetry').classList.remove('hidden');}
+  })().finally(()=>{entering=null;});return entering;
 }
 el('guestRetry').onclick=enterGuest;
-window.addEventListener('sessionExpired',()=>{localStorage.removeItem('articleGuestSession');enterGuest();});
-async function refreshQuota(){try{const q=await webApi('/quota');window.trialRemaining=q.remaining;message('quotaStatus',`${q.scope==='site'?'全站合计':'访客'}体验 ${q.remaining} / ${q.limit} 次剩余${q.remaining===0?' · 已用完':''}`);applyTrialQuota();}catch{}}
+window.addEventListener('sessionExpired',()=>{localStorage.removeItem('articleGuestSession');setTimeout(enterGuest,0);});
+function showQuota(q){window.trialRemaining=q.remaining;message('quotaStatus',`${q.scope==='site'?'全站合计':'访客'}体验 ${q.remaining} / ${q.limit} 次剩余${q.remaining===0?' · 已用完':''}`);applyTrialQuota();}
+async function refreshQuota(){try{showQuota(await webApi('/quota'));}catch{}}
 function applyTrialQuota(){const exhausted=window.trialRemaining===0,history=!creating&&!!activeTask()?.readOnly;el('newTaskButton').disabled=false;el('newTaskForm').querySelector('button[type=submit]').disabled=exhausted;const researchLocked=!!activeTask()&&activeTask().systemLocked!==false;el('researchSubmit').disabled=exhausted||researchBusy||researchLocked;el('recommendRetry').disabled=exhausted||researchBusy||researchLocked;if(exhausted||history){el('publishButton').disabled=true;el('addModelButton').disabled=true;el('sendCommentButton').disabled=true;}}
 window.addEventListener('quotaChanged',refreshQuota);
 function articleCard(a,index,reason,selected=false){

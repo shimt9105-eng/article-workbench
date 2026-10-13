@@ -1,4 +1,5 @@
 const http=require('node:http');
+const {gzip}=require('node:zlib');
 const crypto=require('node:crypto');
 const cloudbase=require('@cloudbase/node-sdk');
 const cheerio=require('cheerio');
@@ -12,7 +13,7 @@ const {refundTrialCall}=require('./quota-refund');
 const {placeSourceImages}=require('./source-images');
 const {parseSearchResponse,recommend}=require('./research');
 const {articleUrl,readArticle}=require('./benchmark');
-const VERSION='2.1.10', INITIAL='以原始随笔决定文章主线，先从资料文档中提炼相关事实，再重新组织论证和语言，写成一篇完整的微信公众号文章。禁止整段照搬资料；保留事实不等于保留原句，不虚构信息。';
+const VERSION='2.1.11', INITIAL='以原始随笔决定文章主线，先从资料文档中提炼相关事实，再重新组织论证和语言，写成一篇完整的微信公众号文章。禁止整段照搬资料；保留事实不等于保留原句，不虚构信息。';
 const PREFIX='article_web_', KEY=process.env.ENCRYPTION_KEY||'', SIGN=process.env.SESSION_SECRET||'';
 const app=cloudbase.init({env:process.env.CLOUDBASE_ENV_ID||cloudbase.SYMBOL_CURRENT_ENV,...(process.env.CLOUDBASE_APIKEY?{accessKey:process.env.CLOUDBASE_APIKEY}:{})});
 const db=app.database();
@@ -66,7 +67,8 @@ async function auth(req){
 }
 async function credentials(user){const record=await get('credentials',user);return record?decrypt(record.encrypted,KEY):{};}
 async function config(user){const own=await credentials(user);return {...own,models:own.models?.length?own.models:shared?JSON.parse(process.env.MODELS_B64?Buffer.from(process.env.MODELS_B64,'base64').toString('utf8'):'[]'):[],tikhub:own.tikhub||(shared?process.env.TIKHUB_API_KEY:'')};}
-async function models(user){return (await config(user)).models.filter(m=>m.enabled!==false&&m.type!=='生图模型'&&['OpenAI Chat','OpenAI Responses','Anthropic Messages'].includes(m.protocol)&&!/^qwen|通义/i.test(m.name)&&!m.baseUrl.includes('codex-cli'));}
+function writingModels(c){return c.models.filter(m=>m.enabled!==false&&m.type!=='生图模型'&&['OpenAI Chat','OpenAI Responses','Anthropic Messages'].includes(m.protocol)&&!/^qwen|通义/i.test(m.name)&&!m.baseUrl.includes('codex-cli'));}
+async function models(user){return writingModels(await config(user));}
 async function model(user,id){const m=(await models(user)).find(m=>m.id===id);if(!m)throw new UserError('所选模型已停用，请重新选择');return m;}
 async function task(user,id){const t=await get('tasks',id);if(!t||t.user!==user)throw new UserError('任务不存在',404);return t;}
 async function variant(user,taskId,modelId){await task(user,taskId);const v=await get('variants',digest(taskId+':'+modelId));if(!v||v.user!==user)throw new UserError('模型版本不存在',404);return v;}
@@ -74,10 +76,9 @@ function publicVariant(v){const {_id,user,...data}=v;const expired=v.activeAttem
 async function state(user){
   const list=await col('tasks').where({user}).orderBy('createdAt','desc').limit(100).get();
   const tasks=await Promise.all((list.data||[]).map(async t=>{
-    const r=await col('variants').where({user,taskId:t._id}).limit(100).get();
+    const [r,savedSearch]=await Promise.all([col('variants').where({user,taskId:t._id}).limit(100).get(),t.research?.searchId?get('searches',t.research.searchId):null]);
     const {_id,user:owner,...data}=t;
     const variants=(r.data||[]).map(publicVariant);
-    const savedSearch=t.research?.searchId?await get('searches',t.research.searchId):null;
     const research={...(t.research||{}),...(savedSearch?.user===owner?{search:{id:savedSearch._id,keyword:savedSearch.keyword,articles:savedSearch.articles||[],recommendations:savedSearch.recommendations||[]}}:{})};
     return {...data,research,id:_id,variants,activeModelId:variants[0]?.modelId,status:variants.some(v=>v.status==='processing')?'processing':'idle'};
   }));
@@ -244,6 +245,10 @@ async function route(req,p,path){
   const session=await auth(req),user=session.user;
   if(path==='/auth/logout'){await col('sessions').doc(session.sid).remove();return {ok:true};}
   await limit(user,120);
+  if(path==='/bootstrap'){
+    const [s,c,quota]=await Promise.all([state(user),config(user),trial?trialQuota(user):{limit:30,scope:'daily'}]);
+    return {state:s,models:writingModels(c).map(({id,name,source})=>({id,name,source})),quota};
+  }
   if(path==='/models')return (await models(user)).map(({id,name,source})=>({id,name,source}));
   if(path==='/state')return state(user);
   if(path==='/quota')return trial?trialQuota(user):{limit:30,scope:'daily'};
@@ -341,7 +346,13 @@ async function route(req,p,path){
 async function handle(req,res){
   const origin=req.headers.origin||'',allow=String(process.env.ALLOWED_ORIGINS||'').split(',').includes(origin);
   const headers={'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer',...(allow?{'Access-Control-Allow-Origin':origin,'Vary':'Origin','Access-Control-Allow-Headers':'Content-Type,Authorization','Access-Control-Allow-Methods':'POST,OPTIONS'}:{})};
-  const respond=(status,value)=>{res.writeHead(status,headers);res.end(JSON.stringify(value));};
+  const respond=(status,value)=>{
+    const body=JSON.stringify(value);
+    if(status===200&&body.length>2048&&/\bgzip\b/.test(req.headers['accept-encoding']||'')){
+      return gzip(body,(error,compressed)=>{res.writeHead(status,error?headers:{...headers,'Content-Encoding':'gzip','Vary':allow?'Origin, Accept-Encoding':'Accept-Encoding'});res.end(error?body:compressed);});
+    }
+    res.writeHead(status,headers);res.end(body);
+  };
   if(req.method==='OPTIONS')return respond(allow?204:403,{});
   if(req.method!=='POST'&&req.url!=='/health')return respond(405,{error:'请使用 POST'});
   if(origin&&!allow)return respond(403,{error:'网页来源未授权'});

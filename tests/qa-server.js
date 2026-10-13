@@ -11,6 +11,7 @@ http.createServer(async(req,res)=>{
   if(!url.pathname.startsWith('/api/')){const file=path.join(root,url.pathname==='/'?'index.html':url.pathname);if(!file.startsWith(root)||!fs.existsSync(file)){res.writeHead(404);return res.end();}res.setHeader('Content-Type',file.endsWith('.css')?'text/css':file.endsWith('.js')?'text/javascript':file.endsWith('.json')?'application/json':file.endsWith('.png')?'image/png':'text/html');return res.end(fs.readFileSync(file));}
   let raw='';for await(const chunk of req)raw+=chunk;const p=raw?JSON.parse(raw):{},route=url.pathname.slice(4);let data;
   if(route==='/guest/enter')data={token:'qa-fixture-only',quota:{limit:10,remaining,scope:'visitor'}};
+  else if(route==='/bootstrap')data={state:s(),models,quota:{limit:10,used:10-remaining,remaining,scope:'visitor'}};
   else if(route==='/quota')data={limit:10,used:10-remaining,remaining,scope:'visitor'};
   else if(route==='/auth/login')data={token:'qa-fixture-only',username:'qa_user'};
   else if(route==='/models')data=models;

@@ -13,7 +13,7 @@ window.webApi=async function(path,payload={}){
   const token=localStorage.getItem('articleGuestSession')||sessionStorage.getItem('articleSession');
   const response=await fetch(window.WORKBENCH_API+path,{method:'POST',headers:{'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{})},body:JSON.stringify(payload),signal:AbortSignal.timeout(570000)});
   let data;try{data=await response.json();}catch{throw new Error('连接中断；请查看任务最新状态后再决定是否重试');}
-  if(!['/guest/enter','/quota','/state','/models','/config/status','/task/draft/new','/task/draft/save','/research/select'].includes(path))window.dispatchEvent(new Event('quotaChanged'));
+  if(!['/guest/enter','/bootstrap','/quota','/state','/models','/config/status','/task/draft/new','/task/draft/save','/research/select'].includes(path))window.dispatchEvent(new Event('quotaChanged'));
   if(!response.ok){if(response.status===401&&!path.startsWith('/auth/'))window.dispatchEvent(new Event('sessionExpired'));throw new Error(data.error||'操作失败');}
   return data;
 };
@@ -21,7 +21,16 @@ const api=window.webApi;
 window.checkTrialCalls=async calls=>{const q=await api('/quota');if(q.remaining!==undefined&&q.remaining<calls)throw new Error(`只剩 ${q.remaining} 次体验额度，本次需要 ${calls} 次，请减少模型数量或查看历史文章`);};
 function saveSelection(){sessionStorage.setItem('articleSelections',JSON.stringify(selections));}
 function mergeSelection(s){s.activeTaskId=selections.taskId||s.activeTaskId;for(const t of s.tasks)t.activeModelId=selections[t.id]||t.activeModelId;currentState=s;return s;}
-async function getState(){const [s,history]=await Promise.all([api('/state'),historyReady]);s.tasks=[...s.tasks,...structuredClone(history)];if(!s.activeTaskId)s.activeTaskId=history[0]?.id||null;return mergeSelection(s);}
+let stateRead=null;
+async function readState(){const [s,history]=await Promise.all([api('/state'),historyReady]);s.tasks=[...s.tasks,...structuredClone(history)];if(!s.activeTaskId)s.activeTaskId=history[0]?.id||null;return mergeSelection(s);}
+function getState(){if(!stateRead)stateRead=readState().finally(()=>{stateRead=null;});return stateRead;}
+window.bootstrapWorkbench=async()=>{
+  const [result,history]=await Promise.all([api('/bootstrap'),historyReady]);
+  result.state.tasks=[...result.state.tasks,...structuredClone(history)];
+  if(!result.state.activeTaskId)result.state.activeTaskId=history[0]?.id||null;
+  result.state=mergeSelection(result.state);
+  return result;
+};
 function writable(taskId){if(currentState?.tasks.find(t=>t.id===taskId)?.readOnly)throw new Error('历史文章为只读展示，请新建自己的任务');}
 async function runVariants(taskId,modelIds,instruction,selectedText){
   writable(taskId);

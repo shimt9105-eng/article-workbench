@@ -593,14 +593,4 @@ ui.sendCommentButton.addEventListener("click", async () => {
   }
 });
 
-(async () => {
-  await window.authReady;
-  try {
-    [appState, availableModels] = await Promise.all([window.editor2.getState(), window.editor2.listModels()]);
-    renderModels();
-    creating = !appState.tasks.length;
-    render();
-  } catch (error) {
-    toast(error.message || String(error), 12000);
-  }
-})();
+// Startup is owned by experience.js; avoid duplicate state/model reads.

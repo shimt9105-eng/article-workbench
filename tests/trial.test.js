@@ -82,3 +82,24 @@ test('a provider failure restores visitor quota once, retains prior HTML and sti
   const globalId=digest('trial-global:'+new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Shanghai'}));assert.equal((await collection('article_web_limits').doc(globalId).get()).data[0].count,1);
  }finally{global.fetch=previous;global.Date=RealDate;}
 });
+
+test('bootstrap returns only visitor-owned tasks and enabled public model fields without spending trial quota',async()=>{
+ const token=(await route(req(''),{deviceSecret:'6'.repeat(64)},'/guest/enter')).token,{user}=JSON.parse(Buffer.from(token.split('.')[0],'base64url'));
+ await collection('article_web_credentials').add({_id:user,encrypted:encrypt({models:[{id:'boot-enabled',name:'enabled',source:'isolated',apiKey:'private-api-key',protocol:'OpenAI Chat',baseUrl:'https://isolated.invalid/v1'},{id:'boot-disabled',name:'disabled',enabled:false,source:'isolated',apiKey:'private-api-key',protocol:'OpenAI Chat',baseUrl:'https://isolated.invalid/v1'}]},process.env.ENCRYPTION_KEY)});
+ await collection('article_web_tasks').add({_id:'boot-task',user,createdAt:new Date().toISOString(),research:{searchId:'boot-search'}});
+ await collection('article_web_variants').add({_id:'boot-variant',user,taskId:'boot-task',modelId:'boot-enabled',articleHtml:'<p>已保存正文</p>',revision:7});
+ await collection('article_web_searches').add({_id:'boot-search',user,keyword:'自己的搜索',articles:[],recommendations:[]});
+ await collection('article_web_tasks').add({_id:'other-private-task',user:'another-user'});
+ const boot=await route(req(token),{},'/bootstrap');
+ assert.deepEqual(boot.models,[{id:'boot-enabled',name:'enabled',source:'isolated'}]);
+ assert.equal(boot.state.tasks.length,1);assert.equal(boot.state.tasks[0].variants[0].revision,7);assert.equal(boot.state.tasks[0].research.search.keyword,'自己的搜索');
+ assert.equal(boot.quota.remaining,10);assert.equal(JSON.stringify(boot).includes('private-api-key'),false);
+ const http=require('node:http'),{gunzipSync}=require('node:zlib'),{handle}=require('../backend/server');
+ await collection('article_web_variants').doc('boot-variant').update({articleHtml:'<p>已保存正文与图片数据</p>'.repeat(500)});
+ const server=http.createServer(handle);await new Promise(r=>server.listen(0,'127.0.0.1',r));
+ try{
+  const response=await new Promise((resolve,reject)=>{const request=http.request({hostname:'127.0.0.1',port:server.address().port,path:'/bootstrap',method:'POST',headers:{Authorization:'Bearer '+token,'Accept-Encoding':'gzip'}},res=>{const chunks=[];res.on('data',x=>chunks.push(x));res.on('end',()=>resolve({headers:res.headers,body:Buffer.concat(chunks)}));});request.on('error',reject);request.end('{}');});
+  assert.equal(response.headers['content-encoding'],'gzip');
+  const restored=JSON.parse(gunzipSync(response.body));assert.equal(restored.state.tasks[0].variants[0].articleHtml,'<p>已保存正文与图片数据</p>'.repeat(500));assert.equal(restored.quota.remaining,10);
+ }finally{await new Promise(r=>server.close(r));}
+});
