@@ -12,8 +12,13 @@ function collection(name){
   }
   return {...query(),where:query,async add(data){if(table.has(data._id))throw new Error('duplicate');table.set(data._id,structuredClone(data));return {id:data._id};},doc(id){return {...query({_id:id}),async remove(){table.delete(id);return {deleted:1};}};}};
 }
+async function runTransaction(callback){
+  const snapshot=new Map([...tables].map(([name,records])=>[name,new Map([...records].map(([id,v])=>[id,structuredClone(v)]))]));
+  try{return await callback({collection(name){const collectionRef=collection(name);return {...collectionRef,doc(id){const ref=collectionRef.doc(id);return {...ref,async get(){return {data:(await ref.get()).data[0]||null};},async set(value){tables.get(name).set(id,{_id:id,...value});return {};}};}};}});}
+  catch(error){tables.clear();for(const [name,records]of snapshot)tables.set(name,records);throw error;}
+}
 const original=Module._load;
-Module._load=function(name,...args){if(name==='@cloudbase/node-sdk')return {SYMBOL_CURRENT_ENV:'isolated-test',init:()=>({database:()=>({collection,command:{lt:value=>({op:'lt',value}),inc:value=>({op:'inc',value})}})})};return original.call(this,name,...args);};
+Module._load=function(name,...args){if(name==='@cloudbase/node-sdk')return {SYMBOL_CURRENT_ENV:'isolated-test',init:()=>({database:()=>({collection,runTransaction,command:{lt:value=>({op:'lt',value}),inc:value=>({op:'inc',value})}})})};return original.call(this,name,...args);};
 process.env.ENCRYPTION_KEY='a'.repeat(64);process.env.SESSION_SECRET='b'.repeat(64);process.env.USE_SHARED_CONFIG='false';process.env.TRIAL_ENABLED='enabled';process.env.TRIAL_SCOPE='visitor';process.env.GLOBAL_DAILY_LIMIT='quota:30';
 const {route,safeHtml,benchmarkInput,documentInput}=require('../backend/server');Module._load=original;
 
@@ -59,4 +64,21 @@ test('a new site day retains each visitor lifetime count',async()=>{
   const RealDate=Date,day=new RealDate(Date.now()+86400000);
   global.Date=class extends RealDate{constructor(...args){super(...(args.length?args:[day]));}static now(){return day.getTime();}};
   try{assert.equal((await route(req(a),{},'/quota')).remaining,0);}finally{global.Date=RealDate;}
+});
+
+
+test('a provider failure restores visitor quota once, retains prior HTML and still counts toward the daily site cap',async()=>{
+ const RealDate=Date,day=new RealDate(Date.now()+2*86400000);global.Date=class extends RealDate{constructor(...args){super(...(args.length?args:[day]));}static now(){return day.getTime();}};
+ const previous=global.fetch;
+ try{
+  const token=(await route(req(''),{deviceSecret:'5'.repeat(64)},'/guest/enter')).token,{user}=JSON.parse(Buffer.from(token.split('.')[0],'base64url'));
+  await collection('article_web_credentials').add({_id:user,encrypted:encrypt({models:[{id:'refund-model',name:'claude-opus-5',source:'isolated',apiKey:'isolated',protocol:'Anthropic Messages',baseUrl:'https://isolated.invalid/v1',type:'文字模型'}]},process.env.ENCRYPTION_KEY)});
+  const created=await route(req(token),{modelIds:['refund-model'],originalEssay:'退款隔离测试',benchmarkUrl:'https://mp.weixin.qq.com/s?isolated=refund',benchmarkContent:'这是足够长度的隔离对标正文，不涉及真实用户文章。'.repeat(10)},'/task/create');
+  const id=digest(created.taskId+':refund-model');await collection('article_web_variants').doc(id).update({articleHtml:'<p>之前的成功正文</p>'});
+  global.fetch=async()=>({ok:false,status:400,text:async()=>JSON.stringify({error:{message:'Too many invalid requests from this session. request id: trace-reference'}})});
+  await assert.rejects(route(req(token),{taskId:created.taskId,modelId:'refund-model',instruction:'优化排版'},'/variant/generate'),/体验额度已退回/);
+  assert.equal((await route(req(token),{},'/quota')).remaining,10);
+  const v=(await collection('article_web_variants').doc(id).get()).data[0];assert.equal(v.articleHtml,'<p>之前的成功正文</p>');assert.equal(v.lastFailure.quotaRefunded,true);assert.equal(v.lastFailure.providerRequestId,'trace-reference');assert.equal(v.activeAttemptId,null);
+  const globalId=digest('trial-global:'+new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Shanghai'}));assert.equal((await collection('article_web_limits').doc(globalId).get()).data[0].count,1);
+ }finally{global.fetch=previous;global.Date=RealDate;}
 });

@@ -1,5 +1,5 @@
 const {extractJsonObject,stripTags}=require('./core');
-const {modelResponseText}=require('./model');
+const {modelResponseText,modelHttpError}=require('./model');
 const {resolveModel,anthropicHeaders}=require('./claude-chat');
 function normalize(items) {
   const seen=new Set();
@@ -39,7 +39,7 @@ async function recommend(model, keyword, goal, articles) {
   else throw new Error('该模型不支持在线推荐');
   body=require('./claude-chat').claudeChatBody(model,body,3000);
   const r=await fetch(model.baseUrl+endpoint,{method:'POST',headers,body:JSON.stringify(body),signal:AbortSignal.timeout(150000)});
-  if(!r.ok)throw new Error(`AI 推荐失败（HTTP ${r.status}）；搜索结果已保留，可以更换模型重试`);
+  if(!r.ok)throw modelHttpError(r,await r.text(),model);
   return validateRecommendations(extractJsonObject(modelResponseText(await r.json(),model.protocol)),articles);
 }
 module.exports={normalize,parseSearchResponse,recommend,validateRecommendations};

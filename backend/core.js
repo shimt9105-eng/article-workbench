@@ -223,6 +223,15 @@ function systemPrompt() {
 每次都返回一篇完整的微信公众号文章，而不是只返回被修改的段落。不得输出分组、切片、提纲或多份候选结果。输出必须是 JSON 对象：{"html":"完整HTML","comment":"本次修改说明"}。html 使用适合公众号的行内样式，不含 Markdown，不含 script/style/iframe/form/input/button、事件属性或危险 URL。`;
 }
 
+// Keep real images in stored HTML; only send their existing factual markers to text models.
+function articleHtmlForModel(task) {
+  return String(task.articleHtml || "").replace(/<img\b[^>]*>/gi, tag => {
+    const src=tag.match(/\bsrc\s*=\s*(["'])([\s\S]*?)\1/i)?.[2]?.replace(/&amp;/g,'&').replace(/&quot;/g,'"');
+    const image=(task.sourceImages||[]).find(item=>item.src===src);
+    return image ? `[${image.id}]` : tag;
+  });
+}
+
 function buildModelInput({ task, instruction, selectedText, mode }) {
   return JSON.stringify({
     任务模式: mode,
@@ -236,7 +245,7 @@ function buildModelInput({ task, instruction, selectedText, mode }) {
       对标文章正文: task.benchmarkContent,
     },
     写作处理原则: "随笔决定文章主线，Word 只提供事实素材；先提炼相关信息，再重新组织论证和语言，禁止整段照搬。保留事实不等于保留原句。先明确随笔核心问题，再筛选相关事实，围绕主线组织完整文章；修改时同样检查并重写照搬资料的段落。图片上下文只用于定位，不要求复用原句。",
-    当前文章HTML: task.articleHtml || "",
+    当前文章HTML: articleHtmlForModel(task),
     用户本次要求: instruction,
     用户选中的文章文本: selectedText || "",
     历史评论: (task.comments || []).map((item) => ({ role: item.role, text: item.text, selectedText: item.selectedText || "" })),
@@ -254,6 +263,7 @@ module.exports = {
   articleTitleFromHtml,
   buildCoverPrompt,
   buildModelInput,
+  articleHtmlForModel,
   buildDraftArticles,
   createEmptyState,
   extractJsonObject,

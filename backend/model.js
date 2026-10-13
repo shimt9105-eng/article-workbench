@@ -15,6 +15,16 @@ function modelResponseText(payload, protocol) {
   throw new Error(`不支持的模型协议：${protocol}`);
 }
 
+function modelHttpError(response, raw, model) {
+  let payload;try{payload=JSON.parse(raw);}catch{payload={};}
+  const detail=String(payload.error?.message||payload.message||'').replaceAll(model.apiKey||'__absent_key__','[REDACTED]').replace(/sk-[a-zA-Z0-9_-]+/g,'[REDACTED]');
+  const error=new Error(`模型服务返回 HTTP ${response.status}${detail?'：'+detail.slice(0,300):''}`);
+  error.httpStatus=response.status;
+  error.providerRequestId=String(payload.request_id||detail.match(/request id:\s*([a-zA-Z0-9_-]+)/i)?.[1]||response.headers?.get('request-id')||response.headers?.get('x-request-id')||'').replaceAll(model.apiKey||'__absent_key__','').replace(/sk-[a-zA-Z0-9_-]+/g,'').replace(/[^a-zA-Z0-9_-]/g,'').slice(0,120);
+  error.code=/too many invalid requests/i.test(detail)?'UPSTREAM_INVALID_REQUEST_COOLDOWN':'MODEL_HTTP_ERROR';
+  return error;
+}
+
 async function callModel(model, input) {
   model = resolveModel(model);
   const headers = { "Content-Type": "application/json" };
@@ -39,20 +49,18 @@ async function callModel(model, input) {
   }
   const response = await fetch(endpoint, { method: "POST", headers, body: JSON.stringify(body), signal: AbortSignal.timeout(420000) });
   const raw = await response.text();
-  if (!response.ok) {
-    let detail = "";
-    try { detail = JSON.parse(raw)?.error?.message || ""; } catch (_error) {}
-    const error = new Error(`模型服务返回 HTTP ${response.status}${detail ? `：${String(detail).slice(0, 180)}` : ""}`);
-    if (/too many invalid requests/i.test(detail)) error.code = 'UPSTREAM_INVALID_REQUEST_COOLDOWN';
-    throw error;
-  }
+  if (!response.ok) throw modelHttpError(response, raw, model);
   const payload = JSON.parse(raw);
+  if(payload.stop_reason==='max_tokens'){const e=new Error('模型输出达到上限，未保存不完整文章');e.code='MODEL_OUTPUT_TRUNCATED';throw e;}
   const parsed = extractJsonObject(modelResponseText(payload, model.protocol));
+  if(!String(parsed.html||'').trim()){const e=new Error('模型未返回有效正文');e.code='MODEL_EMPTY_HTML';throw e;}
+  const html=sanitizeHtml(String(parsed.html||'')).trim();
+  if(!html){const e=new Error('模型未返回有效正文');e.code='MODEL_EMPTY_HTML';throw e;}
   return {
-    html: sanitizeHtml(String(parsed.html || "")),
+    html,
     comment: String(parsed.comment || "已根据固定 System 依据更新全文").trim().slice(0, 500),
     modelName: model.name,
   };
 }
 
-module.exports={callModel,modelResponseText};
+module.exports={callModel,modelResponseText,modelHttpError};

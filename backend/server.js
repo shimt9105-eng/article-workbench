@@ -8,10 +8,11 @@ const Jimp=require('jimp');
 const {digest,same,passwordHash,encrypt,decrypt,download,safeUrl}=require('./security');
 const {systemPrompt,buildModelInput,buildCoverPrompt,buildDraftArticles,sanitizeHtml,stripTags,nowIso,formatTaskTimestamp}=require('./core');
 const {callModel}=require('./model');
+const {refundTrialCall}=require('./quota-refund');
 const {placeSourceImages}=require('./source-images');
 const {parseSearchResponse,recommend}=require('./research');
 const {articleUrl,readArticle}=require('./benchmark');
-const VERSION='2.1.8', INITIAL='以原始随笔决定文章主线，先从资料文档中提炼相关事实，再重新组织论证和语言，写成一篇完整的微信公众号文章。禁止整段照搬资料；保留事实不等于保留原句，不虚构信息。';
+const VERSION='2.1.9', INITIAL='以原始随笔决定文章主线，先从资料文档中提炼相关事实，再重新组织论证和语言，写成一篇完整的微信公众号文章。禁止整段照搬资料；保留事实不等于保留原句，不虚构信息。';
 const PREFIX='article_web_', KEY=process.env.ENCRYPTION_KEY||'', SIGN=process.env.SESSION_SECRET||'';
 const app=cloudbase.init({env:process.env.CLOUDBASE_ENV_ID||cloudbase.SYMBOL_CURRENT_ENV,...(process.env.CLOUDBASE_APIKEY?{accessKey:process.env.CLOUDBASE_APIKEY}:{})});
 const db=app.database();
@@ -125,21 +126,30 @@ async function benchmarkInput(p,user){
 async function generate(user,p){
   const t=await task(user,p.taskId),v=await variant(user,p.taskId,p.modelId),m=await model(user,p.modelId);
   if(v.activeAttemptId&&Date.now()-Date.parse(v.startedAt)<=910000)throw new UserError('此版本正在生成，请等待完成',409);
-  await usage(user);const attempt=uid(),start=nowIso();
+  const attempt=uid(),start=nowIso();let charged=false,modelCompleted=false;
   if(!await claim('variants',v._id,'revision',v.revision,{activeAttemptId:attempt,status:'processing',revision:v.revision+1,startedAt:start,lastError:'',...(v.activeAttemptId?{supersededAttemptId:v.activeAttemptId}:{})}))throw new UserError('版本已更新，请刷新后重试',409);
   const comments=v.comments||[],mode=p.instruction?'revise':'initial',instruction=p.instruction||INITIAL;
   if(mode==='revise')comments.push({id:uid(),role:'user',text:instruction,selectedText:p.selectedText||'',createdAt:start});
   try{
+    await usage(user);charged=true;
     const result=await callModel(m,buildModelInput({task:{...t,articleHtml:v.articleHtml,comments},instruction,selectedText:p.selectedText||'',mode}));
+    modelCompleted=true;
     const placed=placeSourceImages(result.html,t.sourceImages||[]),html=safeHtml(placed.html);
     comments.push({id:uid(),role:'assistant',text:result.comment,createdAt:nowIso()});
     const saved=await claim('variants',v._id,'activeAttemptId',attempt,{articleHtml:html,comments,status:'idle',activeAttemptId:null,completedAttemptId:attempt,revision:v.revision+2,lastError:''});
     if(!saved)throw new UserError('生成结果已被更新任务取代',409);
     await patch('tasks',t._id,{updatedAt:nowIso(),sourceDocWarnings:[...new Set([...(t.sourceDocWarnings||[]),...placed.warnings])]});return {ok:true};
   }catch(e){
-    const message=e.status?e.message:e.code==='UPSTREAM_INVALID_REQUEST_COOLDOWN'?'服务商因无效请求过多临时限制了此模型，请稍后再试，或选择其他模型；已有正文已保留':/timeout|abort/i.test(e.message)?'模型调用超时，可重试该版本':/HTTP \d+/.exec(e.message)?.[0]?'模型服务调用失败（'+(/HTTP \d+/.exec(e.message)[0])+')，请检查模型配置或重试':'模型生成失败，请检查配置或重试；原有正文已保留';
-    await claim('variants',v._id,'activeAttemptId',attempt,{status:'error',activeAttemptId:null,lastError:message,comments:[...comments,{id:uid(),role:'assistant',text:message,createdAt:nowIso()}],revision:v.revision+2});
-    throw new UserError(message,502);
+    let refunded=false;
+    if(charged&&!modelCompleted&&trial&&process.env.TRIAL_SCOPE==='visitor'){
+      try{refunded=await refundTrialCall(db,PREFIX+'limits',trialId(user),digest('model-refund:'+user+':'+attempt),attempt);}
+      catch(_refundError){console.error(JSON.stringify({event:'quota_refund_failed',attemptId:attempt}));}
+    }
+    const failure={code:String(e.code||'MODEL_ERROR').slice(0,100),httpStatus:e.httpStatus||null,providerRequestId:e.providerRequestId||'',at:nowIso(),quotaRefunded:refunded};
+    const detail=e.status?e.message:e.code==='UPSTREAM_INVALID_REQUEST_COOLDOWN'?'模型服务商返回会话限制，暂未生成文章；已有正文已保留':e.code==='MODEL_OUTPUT_TRUNCATED'?'模型输出达到上限，未保存不完整文章；已有正文已保留':/timeout|abort/i.test(e.message)?'模型调用超时，可重试该版本':e.httpStatus?'模型服务调用失败（HTTP '+e.httpStatus+'），已有正文已保留':'模型生成失败，请检查配置或重试；原有正文已保留';
+    const message=detail+(refunded?'；本次体验额度已退回':'')+(failure.providerRequestId?'。服务商请求编号：'+failure.providerRequestId:'');
+    await claim('variants',v._id,'activeAttemptId',attempt,{status:'error',activeAttemptId:null,lastError:message,lastFailure:failure,comments:[...comments,{id:uid(),role:'assistant',text:message,createdAt:nowIso()}],revision:v.revision+2});
+    throw new UserError(message,e.status||502);
   }
 }
 async function wxRequest(c,path,options={}){
