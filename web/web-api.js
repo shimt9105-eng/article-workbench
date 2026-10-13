@@ -106,6 +106,7 @@ window.editor2={
     await window.checkTrialCalls(p.modelIds.length);
     const results=[];let coverModel='生图模型';
     for(const modelId of p.modelIds){try{const result=await api('/article/publish',{taskId:p.taskId,modelId});coverModel=result.coverModel||coverModel;results.push(result);}catch(e){results.push({status:'failed',model_name:currentState.tasks.find(t=>t.id===p.taskId)?.variants.find(v=>v.modelId===modelId)?.modelName||modelId,error:e.message});}}
+    const completed=results.some(r=>['success','duplicate'].includes(r.status)&&r.media_id);if(completed){const task=currentState.tasks.find(t=>t.id===p.taskId);task.deliveryCompleted=true;persistCurrentSnapshot();}
     return {results,coverModel,coverCount:results.filter(r=>r.status==='success').length};
   }
 };

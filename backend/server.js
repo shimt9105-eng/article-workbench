@@ -16,7 +16,7 @@ const {refundTrialCall}=require('./quota-refund');
 const {placeSourceImages}=require('./source-images');
 const {parseSearchResponse,recommend}=require('./research');
 const {articleUrl,readArticle}=require('./benchmark');
-const VERSION='2.1.15', INITIAL='以原始随笔决定文章主线，先从资料文档中提炼相关事实，再重新组织论证和语言，写成一篇完整的微信公众号文章。禁止整段照搬资料；保留事实不等于保留原句，不虚构信息。';
+const VERSION='2.1.16', INITIAL='以原始随笔决定文章主线，先从资料文档中提炼相关事实，再重新组织论证和语言，写成一篇完整的微信公众号文章。禁止整段照搬资料；保留事实不等于保留原句，不虚构信息。';
 const PREFIX='article_web_', KEY=process.env.ENCRYPTION_KEY||'', SIGN=process.env.SESSION_SECRET||'';
 const app=cloudbase.init({env:process.env.CLOUDBASE_ENV_ID||cloudbase.SYMBOL_CURRENT_ENV,...(process.env.CLOUDBASE_APIKEY?{accessKey:process.env.CLOUDBASE_APIKEY}:{})});
 const db=app.database();
@@ -79,13 +79,14 @@ async function task(user,id){const t=await get('tasks',id);if(!t||t.user!==user)
 async function variant(user,taskId,modelId){await task(user,taskId);const v=await get('variants',digest(taskId+':'+modelId));if(!v||v.user!==user)throw new UserError('模型版本不存在',404);return v;}
 function publicVariant(v){const {_id,user,...data}=v;const expired=v.activeAttemptId&&Date.now()-Date.parse(v.startedAt)>910000;return {...data,id:_id,...(expired?{status:'error',lastError:'上次生成已超时，可重试。原有正文已保留'}:{})};}
 async function state(user){
-  const list=await col('tasks').where({user}).orderBy('createdAt','desc').limit(100).get();
+  const [list,sent]=await Promise.all([col('tasks').where({user}).orderBy('createdAt','desc').limit(100).get(),col('drafts').where({user,status:'success'}).field({taskId:true,media_id:true,status:true}).limit(1000).get()]);
+  const completedTasks=require('./task-stage').completedTaskIds(sent.data||[]);
   const tasks=await Promise.all((list.data||[]).map(async t=>{
     const [r,savedSearch]=await Promise.all([col('variants').where({user,taskId:t._id}).limit(100).get(),t.research?.searchId?get('searches',t.research.searchId):null]);
     const {_id,user:owner,...data}=t;
     const variants=(r.data||[]).map(publicVariant);
     const research={...(t.research||{}),...(savedSearch?.user===owner?{search:{id:savedSearch._id,keyword:savedSearch.keyword,articles:savedSearch.articles||[],recommendations:savedSearch.recommendations||[]}}:{})};
-    return {...data,research,id:_id,variants,activeModelId:variants[0]?.modelId,status:variants.some(v=>v.status==='processing')?'processing':'idle'};
+    return {...data,research,id:_id,deliveryCompleted:completedTasks.has(_id),variants,activeModelId:variants[0]?.modelId,status:variants.some(v=>v.status==='processing')?'processing':'idle'};
   }));
   return {appVersion:VERSION,schemaVersion:1,revision:0,tasks,activeTaskId:tasks[0]?.id||null};
 }

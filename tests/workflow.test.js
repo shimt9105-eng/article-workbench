@@ -8,7 +8,7 @@ function collection(name){
   if(!tables.has(name))tables.set(name,new Map());const table=tables.get(name);
   function query(where={}){
     const matches=v=>Object.entries(where).every(([k,x])=>x?.op==='lt'?v[k]<x.value:v[k]===x);
-    return {limit(){return this;},orderBy(){return this;},async get(){return {data:[...table.values()].filter(matches).map(v=>structuredClone(v))};},async update(data){let updated=0;for(const v of table.values())if(matches(v)){for(const [k,x]of Object.entries(data))v[k]=x?.op==='inc'?(v[k]||0)+x.value:structuredClone(x);updated++;}return {updated};}};
+    return {field(){return this;},limit(){return this;},orderBy(){return this;},async get(){return {data:[...table.values()].filter(matches).map(v=>structuredClone(v))};},async update(data){let updated=0;for(const v of table.values())if(matches(v)){for(const [k,x]of Object.entries(data))v[k]=x?.op==='inc'?(v[k]||0)+x.value:structuredClone(x);updated++;}return {updated};}};
   }
   return {...query(),where:query,async add(data){if(table.has(data._id))throw new Error('duplicate');table.set(data._id,structuredClone(data));return {id:data._id};},doc(id){return {...query({_id:id}),async remove(){table.delete(id);return {deleted:1};}};}};
 }
@@ -157,4 +157,13 @@ test('research results, AI recommendations and selected benchmark belong to thei
     await assert.rejects(()=>route(req(alice),{taskId:id,searchId:s.id,articleId:'1'},'/research/select'),/锁定/);
     await assert.rejects(()=>route(req(alice),{searchId:s.id,modelId:'qa-text'},'/research/recommend'),/更新/);
   }finally{global.fetch=previousFetch;await collection('article_web_credentials').doc(user).update({encrypted:credential.encrypted});}
+});
+
+test('task completion follows confirmed draft records within the same visitor',async()=>{
+ const user=digest('qa_alice');
+ await collection('article_web_drafts').add({_id:'sent-test-task',user,taskId:'test-task',status:'success',media_id:'confirmed-wechat-draft'});
+ assert.equal((await route(req(alice),{},'/state')).tasks.find(t=>t.id==='test-task').deliveryCompleted,true);
+ await collection('article_web_drafts').doc('sent-test-task').remove();
+ await collection('article_web_drafts').add({_id:'uncertain-test-task',user,taskId:'test-task',status:'unknown',media_id:'uncertain'});
+ assert.equal((await route(req(alice),{},'/state')).tasks.find(t=>t.id==='test-task').deliveryCompleted,false);
 });

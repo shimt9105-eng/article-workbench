@@ -299,8 +299,7 @@ function renderTasks() {
   }
   ui.taskList.innerHTML = tasks.map((task) => `
     <button class="task-item ${!creating && task.id === appState.activeTaskId ? "active" : ""}" data-task-id="${escapeHtml(task.id)}">
-      <strong>${escapeHtml(task.title)}${task.readOnly ? " · 历史" : ""}</strong>
-      <span>${escapeHtml(variantsOf(task).map((variant) => variant.modelName).join(" / ") || (task.status === "processing" ? "生成中" : "等待生成"))} · ${timeLabel(task.updatedAt)}</span>
+      <div class="task-summary"><strong title="${escapeHtml(task.title)}">${escapeHtml(task.title.replace(/\s*·?\s*\d{4}-\d{2}-\d{2}_\d{2}_\d{2}_\d{2}$/, "").trim() || task.title)}</strong><time>${escapeHtml(new Date(task.updatedAt || task.createdAt).toLocaleString("zh-CN", {year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hour12:false}))}</time></div><span class="task-stage ${task.deliveryCompleted ? "completed" : "working"}">${task.deliveryCompleted ? "已完成" : "制作中"}</span>
     </button>`).join("");
 }
 
@@ -574,6 +573,7 @@ ui.confirmPublishButton.addEventListener("click", async () => {
     await commitTextSave();
     if (pendingTextEdit) throw new Error("正文尚未保存成功，请先刷新核对");
     const response = await window.editor2.publishArticles({ taskId: task.id, modelIds });
+    renderTasks();
     if (response.canceled) {
       toast("已取消发送");
       return;

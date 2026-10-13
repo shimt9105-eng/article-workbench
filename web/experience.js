@@ -3,15 +3,17 @@ let search=null,recommendations=[],researchBusy=false,sourceUploadAttempt=0;
 function message(id,value){el(id).textContent=value;}
 function buttonBusy(id,busy,label){el(id).disabled=busy;if(label)el(id).textContent=label;}
 function fillRecommendModels(){const select=el('recommendModel'),value=select.value;select.replaceChildren(new Option('请选择来源 / 模型',''));for(const m of availableModels)select.add(new Option(`${m.source} / ${m.name}`,m.id));select.value=value;}
-async function connection(){const c=await webApi('/config/status');window.wechatBound=!!c.wechat?.verifiedAt;window.refreshPublishButton();message('connectionStatus',`${c.shared?'默认使用共享 API 配置':'使用自己的 API 配置'} · ${c.quota?`总体验额度 ${c.quota.remaining} / 10 次剩余`:`每日额度 ${c.dailyLimit} 次`} · 搜索${c.hasSearch?'已配置':'未配置'} · ${c.wechat?`已绑定 ${c.wechat.name}（AppID 尾号 ${c.wechat.appSuffix}）`:'尚未绑定公众号'}`);el('unbindButton').classList.toggle('hidden',!c.wechat);return c;}
+async function connection(){const c=await webApi('/config/status');window.wechatBound=!!c.wechat?.verifiedAt;showWechatBinding();window.refreshPublishButton();message('connectionStatus',`${c.shared?'默认使用共享 API 配置':'使用自己的 API 配置'} · ${c.quota?`总体验额度 ${c.quota.remaining} / 10 次剩余`:`每日额度 ${c.dailyLimit} 次`} · 搜索${c.hasSearch?'已配置':'未配置'} · ${c.wechat?`已绑定 ${c.wechat.name}（AppID 尾号 ${c.wechat.appSuffix}）`:'尚未绑定公众号'}`);el('unbindButton').classList.toggle('hidden',!c.wechat);return c;}
 window.openSettings=async()=>{el('settingsDialog').classList.remove('hidden');try{await connection();}catch(e){message('connectionStatus',e.message);}el('wxName').focus();};
+function showWechatBinding(){const status=el('wechatBindingStatus');status.textContent=window.wechatBound===undefined?'读取中':window.wechatBound?'已绑定':'未绑定';status.classList.toggle('bound',window.wechatBound===true);}
 el('settingsButton').onclick=window.openSettings;
+el('bindWechatButton').onclick=window.openSettings;
 el('closeSettings').onclick=()=>{el('settingsDialog').classList.add('hidden');window.pendingPublish=false;};
 let startupTouched=false;
 window.markWorkbenchTouched=()=>{startupTouched=true;};
 for(const event of ['pointerdown','keydown','input'])el('workspace').addEventListener(event,()=>{startupTouched=true;},{capture:true});
 async function displayWorkbench(boot,source){
-  window.wechatBound=boot.wechatBound;appState=window.adoptWorkbenchState(boot.state);availableModels=boot.models;
+  window.wechatBound=boot.wechatBound;showWechatBinding();appState=window.adoptWorkbenchState(boot.state);availableModels=boot.models;
   el('authPanel').classList.add('hidden');el('workspace').classList.remove('hidden');el('workflowNav').classList.remove('hidden');message('accountLabel','免登录体验 · 本浏览器独立保存');
   renderModels();creating=!appState.tasks.length;render();fillRecommendModels();await window.restoreTaskInputs?.(activeTask());
   showQuota(boot.quota);window.completeLogin();
@@ -24,7 +26,7 @@ async function entered(){
   try{
     const boot=await fresh;
     if(!cached||!startupTouched){window.saveWorkbenchSnapshot(boot);await displayWorkbench(boot,'network');}
-    else{availableModels=boot.models;window.wechatBound=boot.wechatBound;showQuota(boot.quota);}
+    else{availableModels=boot.models;window.wechatBound=boot.wechatBound;showWechatBinding();showQuota(boot.quota);}
   }catch(error){if(!cached)throw error;toast('已显示本机缓存，最新状态暂未同步；'+error.message,12000);}
 }
 function validGuestSession(){
@@ -46,7 +48,7 @@ async function enterGuest(){
 }
 el('guestRetry').onclick=enterGuest;
 window.addEventListener('sessionExpired',()=>{localStorage.removeItem('articleGuestSession');setTimeout(enterGuest,0);});
-function showQuota(q){window.rememberWorkbenchQuota?.(q);window.trialRemaining=q.remaining;message('quotaStatus',`${q.scope==='site'?'全站合计':'访客'}体验 ${q.remaining} / ${q.limit} 次剩余${q.remaining===0?' · 已用完':''}`);applyTrialQuota();}
+function showQuota(q){window.rememberWorkbenchQuota?.(q);window.trialRemaining=q.remaining;message('quotaStatus',`${q.remaining} / ${q.limit} 次${q.remaining===0?' · 已用完':''}`);el('quotaProgress').max=q.limit;el('quotaProgress').value=q.remaining;applyTrialQuota();}
 async function refreshQuota(){try{showQuota(await webApi('/quota'));}catch{}}
 function applyTrialQuota(){const exhausted=window.trialRemaining===0,history=!creating&&!!activeTask()?.readOnly;el('newTaskButton').disabled=false;el('newTaskForm').querySelector('button[type=submit]').disabled=exhausted;const researchLocked=!!activeTask()&&activeTask().systemLocked!==false;el('researchSubmit').disabled=exhausted||researchBusy||researchLocked;el('recommendRetry').disabled=exhausted||researchBusy||researchLocked;window.refreshPublishButton();if(exhausted||history){el('addModelButton').disabled=true;el('sendCommentButton').disabled=true;}}
 window.addEventListener('quotaChanged',refreshQuota);
