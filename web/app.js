@@ -23,7 +23,7 @@ function activeTask() {
 
 function variantsOf(task) {
   if(task?.systemLocked===false)return [];
-  if (Array.isArray(task?.variants) && task.variants.length) return task.variants;
+  if (Array.isArray(task?.variants) && task.variants.length) return task.variants.filter(variant => variant.status !== "error" || variant.articleHtml);
   if (!task) return [];
   return [{
     modelId: task.modelId || task.modelName || "legacy",
@@ -217,7 +217,7 @@ function selectedModelIds() {
 }
 
 function remainingModels(task) {
-  const existing = new Set(variantsOf(task).map((variant) => variant.modelId));
+  const existing = new Set((task?.variants || variantsOf(task)).map((variant) => variant.modelId));
   return availableModels.filter((model) => !existing.has(model.id));
 }
 
@@ -323,7 +323,7 @@ function commentMarkup(comment) {
 }
 
 function renderComments(variant) {
-  const comments = variant?.comments || [];
+  const comments = (variant?.comments || []).filter(comment => comment.role === "user" || !(comment.kind === "generation-error" || comment.text === variant?.lastError || /^(?:模型服务(?:商|调用|返回)|模型生成失败|模型调用超时|模型输出达到上限|服务商因无效请求|服务暂时不可用|生成结果已被更新)/.test(String(comment.text || ""))));
   ui.commentCount.textContent = String(comments.length);
   if (!comments.length) {
     ui.commentList.innerHTML = '<div class="comment-empty">选择文章文字或直接输入修改要求</div>';
@@ -364,14 +364,14 @@ function renderActive() {
   const variants = variantsOf(task);
   const variant = activeVariant(task);
   ui.articleTitle.textContent = task.title;
-  ui.articleMeta.textContent = `${variant?.modelName || "模型待定"} · System 已锁定 · ${variant?.status === "processing" ? "正在生成" : variant?.status === "error" ? "生成失败" : "网页预览"}`;
-  ui.variantSwitcher.innerHTML = variants.map((item) => `<button class="variant-tab ${item.modelId === variant?.modelId ? "active" : ""}" data-model-id="${escapeHtml(item.modelId)}">${escapeHtml((item.source ? item.source + " / " : "") + item.modelName)}${item.status === "processing" ? " · 生成中" : item.status === "error" ? " · 失败" : ""}</button>`).join("");
+  ui.articleMeta.textContent = `${variant?.modelName || "模型待定"} · System 已锁定 · ${variant?.status === "processing" ? "正在生成" : "网页预览"}`;
+  ui.variantSwitcher.innerHTML = variants.map((item) => `<button class="variant-tab ${item.modelId === variant?.modelId ? "active" : ""}" data-model-id="${escapeHtml(item.modelId)}">${escapeHtml((item.source ? item.source + " / " : "") + item.modelName)}${item.status === "processing" ? " · 生成中" : ""}</button>`).join("");
   ui.modelToolbar.classList.remove("hidden");
   ui.variantSwitcher.classList.toggle("hidden", variants.length === 0);
-  ui.articlePreview.srcdoc = previewDocument(task.title, variant?.articleHtml || `<p>${variant?.status === "error" ? escapeHtml(variant.lastError || "生成失败") : "文章尚未生成。"}</p>`, task.readOnly);
+  ui.articlePreview.srcdoc = previewDocument(task.title, variant?.articleHtml || "<p>文章尚未生成，可追加已启用模型继续创作。</p>", task.readOnly);
   ui.publishButton.disabled = task.readOnly || !publishableVariants(task).length;
-  ui.sendCommentButton.disabled=!!task.readOnly;ui.commentInput.disabled=!!task.readOnly;ui.addModelButton.disabled=!!task.readOnly;
-  ui.retryVariantButton.classList.toggle("hidden", task.readOnly || variant?.status !== "error");
+  ui.sendCommentButton.disabled=!!task.readOnly || !variant || !availableModels.some(m=>m.id===variant.modelId);ui.commentInput.disabled=!!task.readOnly || !variant || !availableModels.some(m=>m.id===variant.modelId);ui.addModelButton.disabled=!!task.readOnly;
+  ui.retryVariantButton.classList.toggle("hidden", task.readOnly || variant?.status !== "error" || !availableModels.some(m=>m.id===variant.modelId));
   ui.saveStatus.textContent = task.readOnly ? "历史记录 · 只读" : variant?.articleHtml ? "文字可直接编辑" : "暂无可编辑内容";
   renderAddModelOptions();
   if(task.readOnly){
@@ -600,7 +600,6 @@ ui.sendCommentButton.addEventListener("click", async () => {
     renderModels();
     creating = !appState.tasks.length;
     render();
-    if (appState.lastError?.message) toast(`上次执行失败：${appState.lastError.message}`, 12000);
   } catch (error) {
     toast(error.message || String(error), 12000);
   }

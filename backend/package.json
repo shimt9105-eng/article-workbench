@@ -1,6 +1,6 @@
 {
   "name": "article-workbench-api",
-  "version": "2.1.9",
+  "version": "2.1.10",
   "private": true,
   "main": "server.js",
   "scripts": {

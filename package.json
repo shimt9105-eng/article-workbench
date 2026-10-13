@@ -1,6 +1,6 @@
 {
   "name": "article-workbench-web",
-  "version": "2.1.9",
+  "version": "2.1.10",
   "private": true,
   "scripts": {
     "test": "node --test tests/*.test.js",
