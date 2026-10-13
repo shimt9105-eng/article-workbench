@@ -19,7 +19,7 @@ async function displayWorkbench(boot,source){
 }
 async function entered(){
   const fresh=window.bootstrapWorkbench();fresh.catch(()=>{});
-  const cached=await window.readWorkbenchSnapshot();
+  const cached=new URLSearchParams(location.search).has('measure-startup')?null:await window.readWorkbenchSnapshot();
   if(cached)await displayWorkbench(cached,'browser-cache');
   try{
     const boot=await fresh;

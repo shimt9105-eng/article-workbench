@@ -16,7 +16,7 @@ const {refundTrialCall}=require('./quota-refund');
 const {placeSourceImages}=require('./source-images');
 const {parseSearchResponse,recommend}=require('./research');
 const {articleUrl,readArticle}=require('./benchmark');
-const VERSION='2.1.13', INITIAL='以原始随笔决定文章主线，先从资料文档中提炼相关事实，再重新组织论证和语言，写成一篇完整的微信公众号文章。禁止整段照搬资料；保留事实不等于保留原句，不虚构信息。';
+const VERSION='2.1.14', INITIAL='以原始随笔决定文章主线，先从资料文档中提炼相关事实，再重新组织论证和语言，写成一篇完整的微信公众号文章。禁止整段照搬资料；保留事实不等于保留原句，不虚构信息。';
 const PREFIX='article_web_', KEY=process.env.ENCRYPTION_KEY||'', SIGN=process.env.SESSION_SECRET||'';
 const app=cloudbase.init({env:process.env.CLOUDBASE_ENV_ID||cloudbase.SYMBOL_CURRENT_ENV,...(process.env.CLOUDBASE_APIKEY?{accessKey:process.env.CLOUDBASE_APIKEY}:{})});
 const db=app.database();
@@ -33,9 +33,11 @@ async function patch(name,id,data){await col(name).doc(id).update(data);}
 async function claim(name,id,field,expected,data){const r=await col(name).where({_id:id,[field]:expected}).update(data);return r.updated===1;}
 async function limit(id,max=30){
   const bucket=digest(id+':'+Math.floor(Date.now()/300000));
-  try{await add('limits',bucket,{count:0,createdAt:Date.now()});}catch(e){if(!await get('limits',bucket))throw e;}
-  const r=await col('limits').where({_id:bucket,count:db.command.lt(max)}).update({count:db.command.inc(1)});
-  if(r.updated!==1)throw new UserError('操作过于频繁，请 5 分钟后再试',429);
+  const reserve=()=>col('limits').where({_id:bucket,count:db.command.lt(max)}).update({count:db.command.inc(1)});
+  if((await reserve()).updated===1)return;
+  try{await add('limits',bucket,{count:1,createdAt:Date.now()});return;}
+  catch(e){if(!await get('limits',bucket))throw e;}
+  if((await reserve()).updated!==1)throw new UserError('操作过于频繁，请 5 分钟后再试',429);
 }
 async function usage(user){
   if(trial){
@@ -253,7 +255,7 @@ async function route(req,p,path){
     const result={state:s,models:writingModels(c).map(({id,name,source})=>({id,name,source})),quota};
     // CloudBase's HTTP gateway strips Accept-Encoding. Use an explicit envelope
     // only for clients requesting it; old clients keep the ordinary JSON shape.
-    return p.packed?{encoding:'gzip-base64-media',data:(await gzipAsync(packStartup(result))).toString('base64')}:result;
+    return p.packed?{encoding:p.packed==='binary'?'gzip-body-media':'gzip-base64-media',data:(await gzipAsync(packStartup(result))).toString('base64')}:result;
   }
   if(path==='/models')return (await models(user)).map(({id,name,source})=>({id,name,source}));
   if(path==='/state')return state(user);
@@ -353,6 +355,7 @@ async function handle(req,res){
   const origin=req.headers.origin||'',allow=String(process.env.ALLOWED_ORIGINS||'').split(',').includes(origin);
   const headers={'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer',...(allow?{'Access-Control-Allow-Origin':origin,'Vary':'Origin','Access-Control-Allow-Headers':'Content-Type,Authorization','Access-Control-Allow-Methods':'POST,OPTIONS'}:{})};
   const respond=(status,value)=>{
+    if(status===200&&value.encoding==='gzip-body-media'){const body=Buffer.from(value.data,'base64');res.writeHead(status,{...headers,'Content-Type':'application/vnd.article-workbench.gzip','Content-Length':body.length});return res.end(body);}
     const body=JSON.stringify(value);
     if(status===200&&body.length>2048&&/\bgzip\b/.test(req.headers['accept-encoding']||'')){
       return gzip(body,(error,compressed)=>{res.writeHead(status,error?headers:{...headers,'Content-Encoding':'gzip','Vary':allow?'Origin, Accept-Encoding':'Accept-Encoding'});res.end(error?body:compressed);});

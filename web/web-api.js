@@ -12,7 +12,7 @@ let selections=JSON.parse(sessionStorage.getItem('articleSelections')||'{}');
 window.webApi=async function(path,payload={}){
   const token=localStorage.getItem('articleGuestSession')||sessionStorage.getItem('articleSession');
   const response=await fetch(window.WORKBENCH_API+path,{method:'POST',headers:{'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{})},body:JSON.stringify(payload),signal:AbortSignal.timeout(570000)});
-  let data;try{data=await response.json();}catch{throw new Error('连接中断；请查看任务最新状态后再决定是否重试');}
+  let data;try{data=response.headers.get('Content-Type')?.includes('application/vnd.article-workbench.gzip')?{encoding:'gzip-media',payload:await new Response(response.body.pipeThrough(new DecompressionStream('gzip'))).json()}:await response.json();}catch{throw new Error('连接中断；请查看任务最新状态后再决定是否重试');}
   if(!['/guest/enter','/bootstrap','/quota','/state','/models','/config/status','/task/draft/new','/task/draft/save','/research/select'].includes(path))window.dispatchEvent(new Event('quotaChanged'));
   if(!response.ok){if(response.status===401&&!path.startsWith('/auth/'))window.dispatchEvent(new Event('sessionExpired'));throw new Error(data.error||'操作失败');}
   return data;
@@ -41,8 +41,12 @@ window.saveWorkbenchSnapshot=async boot=>{
 };
 window.adoptWorkbenchState=s=>mergeSelection(s);
 window.bootstrapWorkbench=async()=>{
-  const [response,history]=await Promise.all([api('/bootstrap',{packed:typeof DecompressionStream!=='undefined'}),historyReady]);
+  const [response,history]=await Promise.all([api('/bootstrap',{packed:typeof DecompressionStream!=='undefined'?'binary':false}),historyReady]);
   let result=response;
+  if(response.encoding==='gzip-media'){
+    const packed=response.payload;
+    result=JSON.parse(packed.json,(_,item)=>typeof item==='string'?item.replace(/workbench-image:(\d+):end/g,(marker,id)=>packed.images[Number(id)]??marker):item);
+  }
   if(response.encoding==='gzip-base64-media'){
     const bytes=Uint8Array.from(atob(response.data),c=>c.charCodeAt(0));
     const packed=await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'))).json();

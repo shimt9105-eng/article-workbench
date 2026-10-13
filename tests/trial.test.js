@@ -103,3 +103,12 @@ test('bootstrap returns only visitor-owned tasks and enabled public model fields
   const restored=JSON.parse(gunzipSync(response.body));assert.equal(restored.state.tasks[0].variants[0].articleHtml,'<p>已保存正文与图片数据</p>'.repeat(500));assert.equal(restored.quota.remaining,10);
  }finally{await new Promise(r=>server.close(r));}
 });
+
+test('fast existing rate buckets still enforce the 120-request cap without resetting it',async()=>{
+ const token=(await route(req(''),{deviceSecret:'7'.repeat(64)},'/guest/enter')).token;
+ for(let i=0;i<120;i++)await route(req(token),{},'/models');
+ await assert.rejects(route(req(token),{},'/models'),e=>e.status===429);
+ const {user}=JSON.parse(Buffer.from(token.split('.')[0],'base64url')),id=digest(user+':'+Math.floor(Date.now()/300000));
+ assert.equal((await collection('article_web_limits').doc(id).get()).data[0].count,120);
+ assert.equal((await collection('article_web_limits').doc(digest('trial:v1:'+user)).get()).data.length,0);
+});
