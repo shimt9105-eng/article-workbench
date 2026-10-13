@@ -339,6 +339,23 @@ function renderComments(variant) {
   ui.commentList.scrollTop = ui.commentList.scrollHeight;
 }
 
+const publishHint = document.createElement("span");
+publishHint.style.display = "inline-flex";
+ui.publishButton.replaceWith(publishHint);
+publishHint.append(ui.publishButton);
+window.refreshPublishButton = function () {
+  const task = creating ? null : activeTask();
+  let reason = "";
+  if (!task || task.systemLocked === false || !publishableVariants(task).length) reason = "请先生成文章";
+  else if (task.readOnly) reason = "历史文章为只读，不能发送";
+  else if (window.trialRemaining === 0) reason = "体验额度已用完";
+  else if (window.wechatBound === false) reason = "请先绑定公众号";
+  ui.publishButton.disabled = !!reason;
+  ui.publishButton.title = reason;
+  publishHint.title = reason;
+  ui.publishButton.style.pointerEvents = reason ? "none" : "";
+};
+
 function renderActive() {
   const task = creating ? null : activeTask();
   if (!task || task.systemLocked===false) {
@@ -351,7 +368,7 @@ function renderActive() {
     ui.variantSwitcher.classList.add("hidden");
     ui.variantSwitcher.innerHTML = "";
     ui.articlePreview.srcdoc = emptyPreviewDocument();
-    ui.publishButton.disabled = true;
+    window.refreshPublishButton();
     ui.sendCommentButton.disabled=false;ui.commentInput.disabled=false;ui.addModelButton.disabled=false;
     ui.retryVariantButton.classList.add("hidden");
     ui.saveStatus.textContent = "";
@@ -370,7 +387,7 @@ function renderActive() {
   ui.modelToolbar.classList.remove("hidden");
   ui.variantSwitcher.classList.toggle("hidden", variants.length === 0);
   ui.articlePreview.srcdoc = previewDocument(task.title, variant?.articleHtml || "<p>文章尚未生成，可追加已启用模型继续创作。</p>", task.readOnly);
-  ui.publishButton.disabled = task.readOnly || !publishableVariants(task).length;
+  window.refreshPublishButton();
   ui.sendCommentButton.disabled=!!task.readOnly || !variant || !availableModels.some(m=>m.id===variant.modelId);ui.commentInput.disabled=!!task.readOnly || !variant || !availableModels.some(m=>m.id===variant.modelId);ui.addModelButton.disabled=!!task.readOnly;
   ui.retryVariantButton.classList.toggle("hidden", task.readOnly || variant?.status !== "error" || !availableModels.some(m=>m.id===variant.modelId));
   ui.saveStatus.textContent = task.readOnly ? "历史记录 · 只读" : variant?.articleHtml ? "文字可直接编辑" : "暂无可编辑内容";
