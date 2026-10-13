@@ -29,7 +29,7 @@ function articleCard(a,index,reason,selected=false){
 }
 function renderResearch(t=activeTask()){
   const r=t?.research||{},url=t?.systemLocked===false?el('benchmarkInput').value:t?.benchmarkUrl||r.selectedUrl;
-  const selected=[...(search?.articles||[]),r.selectedArticle||{}].find(a=>a.url===url)|| (url?{id:'saved-benchmark',url,title:t?.benchmarkTitle||'已保存的对标文章',account:'',summary:''}:null);
+  const selected=url?([... (search?.articles||[]),r.selectedArticle||{}].find(a=>a.url===url)||{id:'saved-benchmark',url,title:t?.benchmarkTitle||'已保存的对标文章',account:'',summary:''}):null;
   el('recommendations').innerHTML=(selected?articleCard(selected,0,recommendations.find(a=>a.url===url)?.reason||'',true):'')+recommendations.filter(a=>a.url!==url).map((a,n)=>articleCard(a,n,a.reason)).join('');
   el('searchResults').innerHTML=(search?.articles||[]).map((a,n)=>articleCard(a,n,'',a.url===url)).join('');
   el('allResults').classList.toggle('hidden',!search?.articles?.length);
