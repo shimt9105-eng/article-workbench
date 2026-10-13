@@ -112,3 +112,19 @@ test('fast existing rate buckets still enforce the 120-request cap without reset
  assert.equal((await collection('article_web_limits').doc(id).get()).data[0].count,120);
  assert.equal((await collection('article_web_limits').doc(digest('trial:v1:'+user)).get()).data.length,0);
 });
+
+test('only the configured owner bypasses lifetime and daily quotas without spending visitor buckets',async()=>{
+ const {user}=JSON.parse(Buffer.from(a.split('.')[0],'base64url'));
+ const old=process.env.UNLIMITED_VISITOR_IDS,oldFetch=global.fetch;
+ process.env.UNLIMITED_VISITOR_IDS=user;global.fetch=async()=>({ok:true,json:async()=>({code:200,data:{items:[]}})});
+ try{
+  const quotaIds=[digest('trial:v1:'+user),digest('trial-global:'+new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Shanghai'}))];
+  const quotaSnapshot=()=>JSON.stringify(quotaIds.map(id=>tables.get('article_web_limits').get(id)));
+  const before=quotaSnapshot();
+  for(let i=0;i<35;i++)await route(req(a),{keyword:'isolated-owner-quota'},'/research/search');
+  assert.equal(quotaSnapshot(),before);
+  assert.deepEqual(await route(req(a),{},'/quota'),{unlimited:true,limit:null,used:0,remaining:null,scope:'owner'});
+  assert.equal((await route(req(b),{unlimited:true},'/quota')).unlimited,undefined);
+  await assert.rejects(()=>route(req(b),{keyword:'isolated',unlimited:true},'/research/search'),e=>e.status===429);
+ }finally{global.fetch=oldFetch;if(old===undefined)delete process.env.UNLIMITED_VISITOR_IDS;else process.env.UNLIMITED_VISITOR_IDS=old;}
+});

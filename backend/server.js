@@ -25,7 +25,8 @@ const uid=()=>crypto.randomUUID().replaceAll('-','');
 const shared=['true','enabled'].includes(process.env.USE_SHARED_CONFIG);
 const trial=process.env.TRIAL_ENABLED==='enabled';
 const trialId=user=>digest('trial:v1:'+(process.env.TRIAL_SCOPE==='visitor'?user:'site'));
-async function trialQuota(user){const r=await get('limits',trialId(user));const used=r?.count||0;return {limit:10,used,remaining:Math.max(0,10-used),scope:process.env.TRIAL_SCOPE==='visitor'?'visitor':'site'};}
+const unlimitedUser=user=>String(process.env.UNLIMITED_VISITOR_IDS||'').split(',').map(s=>s.trim()).filter(Boolean).includes(user);
+async function trialQuota(user){if(unlimitedUser(user))return {unlimited:true,limit:null,used:0,remaining:null,scope:'owner'};const r=await get('limits',trialId(user));const used=r?.count||0;return {limit:10,used,remaining:Math.max(0,10-used),scope:process.env.TRIAL_SCOPE==='visitor'?'visitor':'site'};}
 class UserError extends Error {constructor(message,status=400){super(message);this.status=status;}}
 async function get(name,id){const r=await col(name).where({_id:id}).limit(1).get();return r.data?.[0]||null;}
 async function add(name,id,data){await col(name).add({_id:id,...data});}
@@ -40,6 +41,7 @@ async function limit(id,max=30){
   if((await reserve()).updated!==1)throw new UserError('操作过于频繁，请 5 分钟后再试',429);
 }
 async function usage(user){
+  if(unlimitedUser(user))return;
   if(trial){
     const id=trialId(user);try{await add('limits',id,{count:0,createdAt:Date.now()});}catch(e){if(!await get('limits',id))throw e;}
     const r=await col('limits').where({_id:id,count:db.command.lt(10)}).update({count:db.command.inc(1)});
@@ -122,7 +124,7 @@ async function benchmarkInput(p,user){
   const reading=(async()=>{
     const c=user?await config(user):{};
     const article=await readArticle(url,{apiKey:c.tikhub,beforeProvider:async()=>{
-      if(trial&&p.modelIds?.length&&(await trialQuota(user)).remaining<p.modelIds.length+1)throw new UserError('本次需读取对标全文并生成文章，请减少模型数量以保留足够额度',429);
+      if(trial&&!unlimitedUser(user)&&p.modelIds?.length&&(await trialQuota(user)).remaining<p.modelIds.length+1)throw new UserError('本次需读取对标全文并生成文章，请减少模型数量以保留足够额度',429);
       await usage(user);
     }});
     if(user){const data={...article,url,savedAt:Date.now()};if(cached)await patch('benchmarks',id,data);else try{await add('benchmarks',id,data);}catch(e){if(!await get('benchmarks',id))throw e;}}
@@ -148,7 +150,7 @@ async function generate(user,p){
     await patch('tasks',t._id,{updatedAt:nowIso(),sourceDocWarnings:[...new Set([...(t.sourceDocWarnings||[]),...placed.warnings])]});return {ok:true};
   }catch(e){
     let refunded=false;
-    if(charged&&!modelCompleted&&trial&&process.env.TRIAL_SCOPE==='visitor'){
+    if(charged&&!modelCompleted&&trial&&!unlimitedUser(user)&&process.env.TRIAL_SCOPE==='visitor'){
       try{refunded=await refundTrialCall(db,PREFIX+'limits',trialId(user),digest('model-refund:'+user+':'+attempt),attempt);}
       catch(_refundError){console.error(JSON.stringify({event:'quota_refund_failed',attemptId:attempt}));}
     }

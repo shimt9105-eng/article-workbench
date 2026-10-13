@@ -18,7 +18,7 @@ window.webApi=async function(path,payload={}){
   return data;
 };
 const api=window.webApi;
-window.checkTrialCalls=async calls=>{const q=await api('/quota');if(q.remaining!==undefined&&q.remaining<calls)throw new Error(`只剩 ${q.remaining} 次体验额度，本次需要 ${calls} 次，请减少模型数量或查看历史文章`);};
+window.checkTrialCalls=async calls=>{const q=await api('/quota');if(!q.unlimited&&q.remaining!==undefined&&q.remaining<calls)throw new Error(`只剩 ${q.remaining} 次体验额度，本次需要 ${calls} 次，请减少模型数量或查看历史文章`);};
 function saveSelection(){sessionStorage.setItem('articleSelections',JSON.stringify(selections));}
 function mergeSelection(s){s.activeTaskId=selections.taskId||s.activeTaskId;for(const t of s.tasks)t.activeModelId=selections[t.id]||t.activeModelId;currentState=s;return s;}
 let lastSnapshot=null;
