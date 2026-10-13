@@ -34,3 +34,30 @@ test('Other Chat models retain their existing request parameters',async()=>{
   try{await callModel({name:'gemini-3.8-flash',protocol:'OpenAI Chat',baseUrl:'https://isolated.invalid/v1',apiKey:'isolated'},'真实输入');}
   finally{global.fetch=previous;}
 });
+
+test('Micu Claude generation and recommendations use the successful local system layout',async()=>{
+  const previous=global.fetch;
+  const model={name:'claude-opus-5',protocol:'OpenAI Chat',baseUrl:'https://www.micuapi.ai/v1',apiKey:'isolated'};
+  const limits=[];
+  global.fetch=async(url,options)=>{
+    const body=JSON.parse(options.body);
+    if(!body.system||body.messages.some(m=>m.role==='system'))return {ok:false,status:400,text:async()=>'{"error":{"message":"system: Field required"}}'};
+    assert.ok(body.system.includes('JSON'));assert.equal(body.messages[0].role,'user');
+    limits.push(body.max_tokens);
+    const result=limits.length===1?{html:'<h1>文章</h1>',comment:'完成'}:{recommendations:[{id:'1',reason:'符合主题'}]};
+    const payload={choices:[{message:{content:JSON.stringify(result)}}]};
+    return {ok:true,text:async()=>JSON.stringify(payload),json:async()=>payload};
+  };
+  try{
+    assert.match((await callModel(model,'写作输入')).html,/文章/);
+    assert.equal((await recommend(model,'主题','方向',[{id:'1',title:'真实文章',url:'https://mp.weixin.qq.com/s?test=1'}]))[0].id,'1');
+    assert.deepEqual(limits,[8192,3000]);
+  }finally{global.fetch=previous;}
+});
+
+test('Provider invalid request cooldown is classified for an actionable user message',async()=>{
+  const previous=global.fetch;
+  global.fetch=async()=>({ok:false,status:400,text:async()=>JSON.stringify({error:{message:'Too many invalid requests from this session. Please check your request format and retry later.'}})});
+  try { await assert.rejects(callModel({name:'claude-opus-5',protocol:'OpenAI Chat',baseUrl:'https://www.micuapi.ai/v1',apiKey:'isolated'},'输入'),e=>e.code==='UPSTREAM_INVALID_REQUEST_COOLDOWN'); }
+  finally { global.fetch=previous; }
+});

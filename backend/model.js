@@ -1,4 +1,5 @@
 const {extractJsonObject,sanitizeHtml,systemPrompt}=require("./core");
+const {claudeChatBody}=require('./claude-chat');
 function modelResponseText(payload, protocol) {
   if (protocol === "OpenAI Chat") {
     const content = payload?.choices?.[0]?.message?.content;
@@ -22,7 +23,7 @@ async function callModel(model, input) {
     endpoint = `${model.baseUrl}/chat/completions`;
     headers.Authorization = `Bearer ${model.apiKey}`;
     body = { model: model.name, messages: [{ role: "system", content: systemPrompt() }, { role: "user", content: input }], response_format: { type: "json_object" } };
-    if (/^claude(?:[-_]|$)/i.test(model.name)) body.max_tokens = 12000;
+    body = claudeChatBody(model, body, 12000);
   } else if (model.protocol === "OpenAI Responses") {
     endpoint = `${model.baseUrl}/responses`;
     headers.Authorization = `Bearer ${model.apiKey}`;
@@ -41,7 +42,9 @@ async function callModel(model, input) {
   if (!response.ok) {
     let detail = "";
     try { detail = JSON.parse(raw)?.error?.message || ""; } catch (_error) {}
-    throw new Error(`模型服务返回 HTTP ${response.status}${detail ? `：${String(detail).slice(0, 180)}` : ""}`);
+    const error = new Error(`模型服务返回 HTTP ${response.status}${detail ? `：${String(detail).slice(0, 180)}` : ""}`);
+    if (/too many invalid requests/i.test(detail)) error.code = 'UPSTREAM_INVALID_REQUEST_COOLDOWN';
+    throw error;
   }
   const payload = JSON.parse(raw);
   const parsed = extractJsonObject(modelResponseText(payload, model.protocol));

@@ -35,7 +35,7 @@ async function recommend(model, keyword, goal, articles) {
   else if(model.protocol==='OpenAI Responses'){endpoint='/responses';headers.Authorization=`Bearer ${model.apiKey}`;body={model:model.name,instructions,input,store:false};}
   else if(model.protocol==='Anthropic Messages'){endpoint='/messages';headers['x-api-key']=model.apiKey;headers['anthropic-version']='2023-06-01';body={model:model.name,max_tokens:3000,system:instructions,messages:[{role:'user',content:input}]};}
   else throw new Error('该模型不支持在线推荐');
-  if(model.protocol==='OpenAI Chat'&&/^claude(?:[-_]|$)/i.test(model.name))body.max_tokens=3000;
+  body=require('./claude-chat').claudeChatBody(model,body,3000);
   const r=await fetch(model.baseUrl+endpoint,{method:'POST',headers,body:JSON.stringify(body),signal:AbortSignal.timeout(150000)});
   if(!r.ok)throw new Error(`AI 推荐失败（HTTP ${r.status}）；搜索结果已保留，可以更换模型重试`);
   return validateRecommendations(extractJsonObject(modelResponseText(await r.json(),model.protocol)),articles);

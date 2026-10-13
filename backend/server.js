@@ -11,7 +11,7 @@ const {callModel}=require('./model');
 const {placeSourceImages}=require('./source-images');
 const {parseSearchResponse,recommend}=require('./research');
 const {articleUrl,readArticle}=require('./benchmark');
-const VERSION='2.1.6', INITIAL='以原始随笔决定文章主线，先从资料文档中提炼相关事实，再重新组织论证和语言，写成一篇完整的微信公众号文章。禁止整段照搬资料；保留事实不等于保留原句，不虚构信息。';
+const VERSION='2.1.7', INITIAL='以原始随笔决定文章主线，先从资料文档中提炼相关事实，再重新组织论证和语言，写成一篇完整的微信公众号文章。禁止整段照搬资料；保留事实不等于保留原句，不虚构信息。';
 const PREFIX='article_web_', KEY=process.env.ENCRYPTION_KEY||'', SIGN=process.env.SESSION_SECRET||'';
 const app=cloudbase.init({env:process.env.CLOUDBASE_ENV_ID||cloudbase.SYMBOL_CURRENT_ENV,...(process.env.CLOUDBASE_APIKEY?{accessKey:process.env.CLOUDBASE_APIKEY}:{})});
 const db=app.database();
@@ -137,7 +137,7 @@ async function generate(user,p){
     if(!saved)throw new UserError('生成结果已被更新任务取代',409);
     await patch('tasks',t._id,{updatedAt:nowIso(),sourceDocWarnings:[...new Set([...(t.sourceDocWarnings||[]),...placed.warnings])]});return {ok:true};
   }catch(e){
-    const message=e.status?e.message:/timeout|abort/i.test(e.message)?'模型调用超时，可重试该版本':/HTTP \d+/.exec(e.message)?.[0]?'模型服务调用失败（'+(/HTTP \d+/.exec(e.message)[0])+')，请检查模型配置或重试':'模型生成失败，请检查配置或重试；原有正文已保留';
+    const message=e.status?e.message:e.code==='UPSTREAM_INVALID_REQUEST_COOLDOWN'?'服务商因无效请求过多临时限制了此模型，请稍后再试，或选择其他模型；已有正文已保留':/timeout|abort/i.test(e.message)?'模型调用超时，可重试该版本':/HTTP \d+/.exec(e.message)?.[0]?'模型服务调用失败（'+(/HTTP \d+/.exec(e.message)[0])+')，请检查模型配置或重试':'模型生成失败，请检查配置或重试；原有正文已保留';
     await claim('variants',v._id,'activeAttemptId',attempt,{status:'error',activeAttemptId:null,lastError:message,comments:[...comments,{id:uid(),role:'assistant',text:message,createdAt:nowIso()}],revision:v.revision+2});
     throw new UserError(message,502);
   }
