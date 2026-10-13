@@ -1,5 +1,5 @@
 const {extractJsonObject,sanitizeHtml,systemPrompt}=require("./core");
-const {claudeChatBody}=require('./claude-chat');
+const {claudeChatBody,resolveModel,anthropicHeaders,isMicuClaude}=require('./claude-chat');
 function modelResponseText(payload, protocol) {
   if (protocol === "OpenAI Chat") {
     const content = payload?.choices?.[0]?.message?.content;
@@ -16,6 +16,7 @@ function modelResponseText(payload, protocol) {
 }
 
 async function callModel(model, input) {
+  model = resolveModel(model);
   const headers = { "Content-Type": "application/json" };
   let endpoint;
   let body;
@@ -31,9 +32,8 @@ async function callModel(model, input) {
     if (model.thinking && !["none", "不支持", "不确定"].includes(model.thinking)) body.reasoning = { effort: model.thinking };
   } else if (model.protocol === "Anthropic Messages") {
     endpoint = `${model.baseUrl}/messages`;
-    headers["x-api-key"] = model.apiKey;
-    headers["anthropic-version"] = "2023-06-01";
-    body = { model: model.name, max_tokens: 12000, system: systemPrompt(), messages: [{ role: "user", content: input }] };
+    Object.assign(headers, anthropicHeaders(model));
+    body = { model: model.name, max_tokens: isMicuClaude(model) ? 8192 : 12000, system: systemPrompt(), messages: [{ role: "user", content: input }] };
   } else {
     throw new Error(`模型协议暂不支持：${model.protocol}`);
   }

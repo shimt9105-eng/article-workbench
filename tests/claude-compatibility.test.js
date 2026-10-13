@@ -35,17 +35,22 @@ test('Other Chat models retain their existing request parameters',async()=>{
   finally{global.fetch=previous;}
 });
 
-test('Micu Claude generation and recommendations use the successful local system layout',async()=>{
+test('Micu Claude legacy Chat configuration uses documented Messages protocol for generation and recommendations',async()=>{
   const previous=global.fetch;
   const model={name:'claude-opus-5',protocol:'OpenAI Chat',baseUrl:'https://www.micuapi.ai/v1',apiKey:'isolated'};
   const limits=[];
   global.fetch=async(url,options)=>{
+    assert.equal(url,'https://www.micuapi.ai/v1/messages');
+    assert.equal(options.headers['User-Agent'],'claude-cli/2.0.76 (external, cli)');
+    assert.equal(options.headers.Authorization,'Bearer isolated');
+    assert.equal(options.headers['anthropic-version'],'2023-06-01');
     const body=JSON.parse(options.body);
+    assert.equal(Object.hasOwn(body,'response_format'),false);
     if(!body.system||body.messages.some(m=>m.role==='system'))return {ok:false,status:400,text:async()=>'{"error":{"message":"system: Field required"}}'};
     assert.ok(body.system.includes('JSON'));assert.equal(body.messages[0].role,'user');
     limits.push(body.max_tokens);
     const result=limits.length===1?{html:'<h1>文章</h1>',comment:'完成'}:{recommendations:[{id:'1',reason:'符合主题'}]};
-    const payload={choices:[{message:{content:JSON.stringify(result)}}]};
+    const payload={content:[{type:'text',text:JSON.stringify(result)}]};
     return {ok:true,text:async()=>JSON.stringify(payload),json:async()=>payload};
   };
   try{
