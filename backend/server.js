@@ -1,6 +1,7 @@
 const http=require('node:http');
 const {gzip}=require('node:zlib');
 const {promisify}=require('node:util');
+const {packStartup}=require('./startup-pack');
 const gzipAsync=promisify(gzip);
 const crypto=require('node:crypto');
 const cloudbase=require('@cloudbase/node-sdk');
@@ -15,7 +16,7 @@ const {refundTrialCall}=require('./quota-refund');
 const {placeSourceImages}=require('./source-images');
 const {parseSearchResponse,recommend}=require('./research');
 const {articleUrl,readArticle}=require('./benchmark');
-const VERSION='2.1.12', INITIAL='以原始随笔决定文章主线，先从资料文档中提炼相关事实，再重新组织论证和语言，写成一篇完整的微信公众号文章。禁止整段照搬资料；保留事实不等于保留原句，不虚构信息。';
+const VERSION='2.1.13', INITIAL='以原始随笔决定文章主线，先从资料文档中提炼相关事实，再重新组织论证和语言，写成一篇完整的微信公众号文章。禁止整段照搬资料；保留事实不等于保留原句，不虚构信息。';
 const PREFIX='article_web_', KEY=process.env.ENCRYPTION_KEY||'', SIGN=process.env.SESSION_SECRET||'';
 const app=cloudbase.init({env:process.env.CLOUDBASE_ENV_ID||cloudbase.SYMBOL_CURRENT_ENV,...(process.env.CLOUDBASE_APIKEY?{accessKey:process.env.CLOUDBASE_APIKEY}:{})});
 const db=app.database();
@@ -252,7 +253,7 @@ async function route(req,p,path){
     const result={state:s,models:writingModels(c).map(({id,name,source})=>({id,name,source})),quota};
     // CloudBase's HTTP gateway strips Accept-Encoding. Use an explicit envelope
     // only for clients requesting it; old clients keep the ordinary JSON shape.
-    return p.packed?{encoding:'gzip-base64',data:(await gzipAsync(JSON.stringify(result))).toString('base64')}:result;
+    return p.packed?{encoding:'gzip-base64-media',data:(await gzipAsync(packStartup(result))).toString('base64')}:result;
   }
   if(path==='/models')return (await models(user)).map(({id,name,source})=>({id,name,source}));
   if(path==='/state')return state(user);

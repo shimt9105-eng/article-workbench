@@ -132,6 +132,7 @@ function editedArticleHtml(doc) {
 }
 
 function scheduleTextSave(doc) {
+  window.markWorkbenchTouched?.();
   const task = activeTask();
   const variant = activeVariant(task);
   if (!task || !variant || task.readOnly) return;

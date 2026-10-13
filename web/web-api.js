@@ -22,7 +22,9 @@ window.checkTrialCalls=async calls=>{const q=await api('/quota');if(q.remaining!
 function saveSelection(){sessionStorage.setItem('articleSelections',JSON.stringify(selections));}
 function mergeSelection(s){s.activeTaskId=selections.taskId||s.activeTaskId;for(const t of s.tasks)t.activeModelId=selections[t.id]||t.activeModelId;currentState=s;return s;}
 let stateRead=null;
-async function readState(){const [s,history]=await Promise.all([api('/state'),historyReady]);s.tasks=[...s.tasks,...structuredClone(history)];if(!s.activeTaskId)s.activeTaskId=history[0]?.id||null;return mergeSelection(s);}
+let lastSnapshot=null;
+function persistCurrentSnapshot(){if(lastSnapshot&&currentState)window.saveWorkbenchSnapshot({...lastSnapshot,state:currentState});}
+async function readState(){const [s,history]=await Promise.all([api('/state'),historyReady]);s.tasks=[...s.tasks,...structuredClone(history)];if(!s.activeTaskId)s.activeTaskId=history[0]?.id||null;const merged=mergeSelection(s);persistCurrentSnapshot();return merged;}
 function getState(){if(!stateRead)stateRead=readState().finally(()=>{stateRead=null;});return stateRead;}
 const cacheIdentity=()=>window.WORKBENCH_API+':'+localStorage.getItem('articleGuestSecret');
 const snapshotDb=new Promise(resolve=>{
@@ -30,9 +32,10 @@ const snapshotDb=new Promise(resolve=>{
 });
 window.readWorkbenchSnapshot=async()=>{
   const db=await snapshotDb;if(!db)return null;
-  return new Promise(resolve=>{try{const request=db.transaction('snapshots').objectStore('snapshots').get(cacheIdentity());request.onsuccess=()=>{const saved=request.result;resolve(saved?.version===1&&Date.now()-saved.savedAt<86400000?saved.boot:null);};request.onerror=()=>resolve(null);}catch{resolve(null);}});
+  return new Promise(resolve=>{try{const request=db.transaction('snapshots').objectStore('snapshots').get(cacheIdentity());request.onsuccess=()=>{const saved=request.result;const boot=saved?.version===1&&Date.now()-saved.savedAt<86400000?saved.boot:null;if(boot)lastSnapshot=boot;resolve(boot);};request.onerror=()=>resolve(null);}catch{resolve(null);}});
 };
 window.saveWorkbenchSnapshot=async boot=>{
+  lastSnapshot=structuredClone(boot);
   const db=await snapshotDb;if(!db)return;
   try{const transaction=db.transaction('snapshots','readwrite');transaction.objectStore('snapshots').put({version:1,savedAt:Date.now(),boot:structuredClone(boot)},cacheIdentity());transaction.onerror=()=>{};}catch{}
 };
@@ -40,9 +43,10 @@ window.adoptWorkbenchState=s=>mergeSelection(s);
 window.bootstrapWorkbench=async()=>{
   const [response,history]=await Promise.all([api('/bootstrap',{packed:typeof DecompressionStream!=='undefined'}),historyReady]);
   let result=response;
-  if(response.encoding==='gzip-base64'){
+  if(response.encoding==='gzip-base64-media'){
     const bytes=Uint8Array.from(atob(response.data),c=>c.charCodeAt(0));
-    result=await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'))).json();
+    const packed=await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'))).json();
+    result=JSON.parse(packed.json,(_,item)=>typeof item==='string'?item.replace(/workbench-image:(\d+):end/g,(marker,id)=>packed.images[Number(id)]??marker):item);
   }
   result.state.tasks=[...result.state.tasks,...structuredClone(history)];
   if(!result.state.activeTaskId)result.state.activeTaskId=history[0]?.id||null;
@@ -68,7 +72,7 @@ window.restoreUploadedDocument=data=>{
 };
 window.editor2={
   newDraft:async()=>{const taskId=crypto.randomUUID().replaceAll('-','');const r=await api('/task/draft/new',{taskId});selections.taskId=r.taskId;saveSelection();return getState();},
-  saveDraft:async p=>{const input={...p,...(uploadedDocument||{})};const result=await api('/task/draft/save',input);const t=currentState?.tasks.find(t=>t.id===p.taskId);if(t){t.draftInput=structuredClone(input);t.draftRevision=result.revision;t.updatedAt=result.updatedAt;t.title=result.title;}return result;},
+  saveDraft:async p=>{const input={...p,...(uploadedDocument||{})};const result=await api('/task/draft/save',input);const t=currentState?.tasks.find(t=>t.id===p.taskId);if(t){t.draftInput=structuredClone(input);t.draftRevision=result.revision;t.updatedAt=result.updatedAt;t.title=result.title;persistCurrentSnapshot();}return result;},
   getState,listModels:()=>api('/models'),
   selectTask:async taskId=>{if(!currentState?.tasks.some(t=>t.id===taskId))throw new Error('任务尚未加载，请刷新任务列表');selections.taskId=taskId;saveSelection();return mergeSelection(currentState);},
   selectVariant:async(taskId,modelId)=>{
@@ -91,7 +95,7 @@ window.editor2={
   updateArticleText:async p=>{
     writable(p.taskId);
     const v=currentState?.tasks.find(t=>t.id===p.taskId)?.variants.find(v=>v.modelId===p.modelId);
-    const result=await api('/article/save',{...p,revision:v?.revision});if(v)v.revision=result.revision;return result;
+    const result=await api('/article/save',{...p,revision:v?.revision});if(v){v.revision=result.revision;v.articleHtml=p.html;persistCurrentSnapshot();}return result;
   },
   publishArticles:async p=>{
     writable(p.taskId);

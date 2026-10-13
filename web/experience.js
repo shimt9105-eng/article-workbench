@@ -8,6 +8,7 @@ window.openSettings=async()=>{el('settingsDialog').classList.remove('hidden');tr
 el('settingsButton').onclick=window.openSettings;
 el('closeSettings').onclick=()=>{el('settingsDialog').classList.add('hidden');window.pendingPublish=false;};
 let startupTouched=false;
+window.markWorkbenchTouched=()=>{startupTouched=true;};
 for(const event of ['pointerdown','keydown','input'])el('workspace').addEventListener(event,()=>{startupTouched=true;},{capture:true});
 async function displayWorkbench(boot,source){
   appState=window.adoptWorkbenchState(boot.state);availableModels=boot.models;
@@ -17,13 +18,12 @@ async function displayWorkbench(boot,source){
   requestAnimationFrame(()=>{if(!el('workspace').dataset.readyMs){el('workspace').dataset.readyMs=String(Math.round(performance.now()));el('workspace').dataset.loadSource=source;}});
 }
 async function entered(){
-  const fresh=window.bootstrapWorkbench();
+  const fresh=window.bootstrapWorkbench();fresh.catch(()=>{});
   const cached=await window.readWorkbenchSnapshot();
   if(cached)await displayWorkbench(cached,'browser-cache');
   try{
     const boot=await fresh;
-    window.saveWorkbenchSnapshot(boot);
-    if(!cached||!startupTouched)await displayWorkbench(boot,'network');
+    if(!cached||!startupTouched){window.saveWorkbenchSnapshot(boot);await displayWorkbench(boot,'network');}
     else{availableModels=boot.models;showQuota(boot.quota);}
   }catch(error){if(!cached)throw error;toast('已显示本机缓存，最新状态暂未同步；'+error.message,12000);}
 }
