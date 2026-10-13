@@ -24,11 +24,28 @@ function mergeSelection(s){s.activeTaskId=selections.taskId||s.activeTaskId;for(
 let stateRead=null;
 async function readState(){const [s,history]=await Promise.all([api('/state'),historyReady]);s.tasks=[...s.tasks,...structuredClone(history)];if(!s.activeTaskId)s.activeTaskId=history[0]?.id||null;return mergeSelection(s);}
 function getState(){if(!stateRead)stateRead=readState().finally(()=>{stateRead=null;});return stateRead;}
+const cacheIdentity=()=>window.WORKBENCH_API+':'+localStorage.getItem('articleGuestSecret');
+const snapshotDb=new Promise(resolve=>{
+  try{const open=indexedDB.open('articleWorkbenchSnapshots',1);open.onupgradeneeded=()=>open.result.createObjectStore('snapshots');open.onsuccess=()=>resolve(open.result);open.onerror=()=>resolve(null);}catch{resolve(null);}
+});
+window.readWorkbenchSnapshot=async()=>{
+  const db=await snapshotDb;if(!db)return null;
+  return new Promise(resolve=>{try{const request=db.transaction('snapshots').objectStore('snapshots').get(cacheIdentity());request.onsuccess=()=>{const saved=request.result;resolve(saved?.version===1&&Date.now()-saved.savedAt<86400000?saved.boot:null);};request.onerror=()=>resolve(null);}catch{resolve(null);}});
+};
+window.saveWorkbenchSnapshot=async boot=>{
+  const db=await snapshotDb;if(!db)return;
+  try{const transaction=db.transaction('snapshots','readwrite');transaction.objectStore('snapshots').put({version:1,savedAt:Date.now(),boot:structuredClone(boot)},cacheIdentity());transaction.onerror=()=>{};}catch{}
+};
+window.adoptWorkbenchState=s=>mergeSelection(s);
 window.bootstrapWorkbench=async()=>{
-  const [result,history]=await Promise.all([api('/bootstrap'),historyReady]);
+  const [response,history]=await Promise.all([api('/bootstrap',{packed:typeof DecompressionStream!=='undefined'}),historyReady]);
+  let result=response;
+  if(response.encoding==='gzip-base64'){
+    const bytes=Uint8Array.from(atob(response.data),c=>c.charCodeAt(0));
+    result=await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'))).json();
+  }
   result.state.tasks=[...result.state.tasks,...structuredClone(history)];
   if(!result.state.activeTaskId)result.state.activeTaskId=history[0]?.id||null;
-  result.state=mergeSelection(result.state);
   return result;
 };
 function writable(taskId){if(currentState?.tasks.find(t=>t.id===taskId)?.readOnly)throw new Error('历史文章为只读展示，请新建自己的任务');}

@@ -7,14 +7,25 @@ async function connection(){const c=await webApi('/config/status');message('conn
 window.openSettings=async()=>{el('settingsDialog').classList.remove('hidden');try{await connection();}catch(e){message('connectionStatus',e.message);}el('wxName').focus();};
 el('settingsButton').onclick=window.openSettings;
 el('closeSettings').onclick=()=>{el('settingsDialog').classList.add('hidden');window.pendingPublish=false;};
-async function entered(){
-  const boot=await window.bootstrapWorkbench();
-  appState=boot.state;availableModels=boot.models;
-  window.trialRemaining=boot.quota.remaining;
+let startupTouched=false;
+for(const event of ['pointerdown','keydown','input'])el('workspace').addEventListener(event,()=>{startupTouched=true;},{capture:true});
+async function displayWorkbench(boot,source){
+  appState=window.adoptWorkbenchState(boot.state);availableModels=boot.models;
   el('authPanel').classList.add('hidden');el('workspace').classList.remove('hidden');el('workflowNav').classList.remove('hidden');message('accountLabel','免登录体验 · 本浏览器独立保存');
   renderModels();creating=!appState.tasks.length;render();fillRecommendModels();await window.restoreTaskInputs?.(activeTask());
   showQuota(boot.quota);window.completeLogin();
-  requestAnimationFrame(()=>{el('workspace').dataset.readyMs=String(Math.round(performance.now()));});
+  requestAnimationFrame(()=>{if(!el('workspace').dataset.readyMs){el('workspace').dataset.readyMs=String(Math.round(performance.now()));el('workspace').dataset.loadSource=source;}});
+}
+async function entered(){
+  const fresh=window.bootstrapWorkbench();
+  const cached=await window.readWorkbenchSnapshot();
+  if(cached)await displayWorkbench(cached,'browser-cache');
+  try{
+    const boot=await fresh;
+    window.saveWorkbenchSnapshot(boot);
+    if(!cached||!startupTouched)await displayWorkbench(boot,'network');
+    else{availableModels=boot.models;showQuota(boot.quota);}
+  }catch(error){if(!cached)throw error;toast('已显示本机缓存，最新状态暂未同步；'+error.message,12000);}
 }
 function validGuestSession(){
   try{const token=localStorage.getItem('articleGuestSession');const session=JSON.parse(atob(token.split('.')[0].replace(/-/g,'+').replace(/_/g,'/')));return session.kind==='guest'&&session.exp>Date.now()+60000;}catch{return false;}
