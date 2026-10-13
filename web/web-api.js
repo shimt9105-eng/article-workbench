@@ -39,6 +39,7 @@ window.saveWorkbenchSnapshot=async boot=>{
   const db=await snapshotDb;if(!db)return;
   try{const transaction=db.transaction('snapshots','readwrite');transaction.objectStore('snapshots').put({version:1,savedAt:Date.now(),boot:structuredClone(boot)},cacheIdentity());transaction.onerror=()=>{};}catch{}
 };
+window.rememberWorkbenchQuota=quota=>{if(lastSnapshot)window.saveWorkbenchSnapshot({...lastSnapshot,quota});};
 window.adoptWorkbenchState=s=>mergeSelection(s);
 window.bootstrapWorkbench=async()=>{
   const [response,history]=await Promise.all([api('/bootstrap',{packed:typeof DecompressionStream!=='undefined'?'binary':false}),historyReady]);

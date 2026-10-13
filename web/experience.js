@@ -46,7 +46,7 @@ async function enterGuest(){
 }
 el('guestRetry').onclick=enterGuest;
 window.addEventListener('sessionExpired',()=>{localStorage.removeItem('articleGuestSession');setTimeout(enterGuest,0);});
-function showQuota(q){window.trialRemaining=q.remaining;message('quotaStatus',`${q.scope==='site'?'全站合计':'访客'}体验 ${q.remaining} / ${q.limit} 次剩余${q.remaining===0?' · 已用完':''}`);applyTrialQuota();}
+function showQuota(q){window.rememberWorkbenchQuota?.(q);window.trialRemaining=q.remaining;message('quotaStatus',`${q.scope==='site'?'全站合计':'访客'}体验 ${q.remaining} / ${q.limit} 次剩余${q.remaining===0?' · 已用完':''}`);applyTrialQuota();}
 async function refreshQuota(){try{showQuota(await webApi('/quota'));}catch{}}
 function applyTrialQuota(){const exhausted=window.trialRemaining===0,history=!creating&&!!activeTask()?.readOnly;el('newTaskButton').disabled=false;el('newTaskForm').querySelector('button[type=submit]').disabled=exhausted;const researchLocked=!!activeTask()&&activeTask().systemLocked!==false;el('researchSubmit').disabled=exhausted||researchBusy||researchLocked;el('recommendRetry').disabled=exhausted||researchBusy||researchLocked;if(exhausted||history){el('publishButton').disabled=true;el('addModelButton').disabled=true;el('sendCommentButton').disabled=true;}}
 window.addEventListener('quotaChanged',refreshQuota);
