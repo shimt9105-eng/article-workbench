@@ -7,7 +7,7 @@ const vm=require('node:vm');
 function browserFixture(){
   const calls=[],elements={sourceFile:{value:''},sourceFileStatus:{textContent:''},clearUpload:{classList:{add(){}}}},storage={getItem(){return null;},setItem(){}};
   const window={WORKBENCH_API:'https://isolated.invalid',dispatchEvent(){}};
-  let fixtureTask={id:'isolated-task',variants:[]};
+  let fixtureTask={id:'isolated-task',variants:[{modelId:'first',articleHtml:'<h1>模型一原稿</h1>'},{modelId:'second',articleHtml:'<h1>模型二原稿</h1>'}]};
   const fetch=async(url,options)=>{
     if(String(url).endsWith('history.json'))return {ok:true,json:async()=>({tasks:[]})};
     const route=String(url).replace(window.WORKBENCH_API,'');const payload=JSON.parse(options.body);calls.push({route,payload});
@@ -56,4 +56,12 @@ test('new named task and saving edits are separate from paid generation',async()
   assert.equal(t.draftRevision,1);assert.equal(t.title,'真实主题 · 任务');
   assert.equal(calls.find(c=>c.route==='/task/draft/save').payload.sourceDocTitle,'保存的资料.docx');
   assert(!calls.some(c=>c.route==='/variant/generate'||c.route==='/task/create'||c.route==='/quota'));
+});
+
+test('switching loaded model versions needs no API calls and preserves independent article content',async()=>{
+  const {window,calls}=browserFixture();const s=await window.editor2.getState();calls.length=0;
+  const firstHtml=s.tasks[0].variants[0].articleHtml;
+  for(const modelId of ['second','first','second']){const next=await window.editor2.selectVariant('isolated-task',modelId);assert.equal(next.tasks[0].activeModelId,modelId);assert.equal(next.tasks[0].variants[0].articleHtml,firstHtml);}
+  assert.equal(calls.length,0);
+  await assert.rejects(()=>window.editor2.selectVariant('isolated-task','missing'),/尚未加载/);assert.equal(calls.length,0);
 });

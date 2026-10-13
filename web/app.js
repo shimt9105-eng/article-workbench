@@ -13,6 +13,8 @@ let selectedText = "";
 let availableModels = [];
 let editSaveTimer = null;
 let pendingTextEdit = null;
+let textSavePromise = null;
+let variantSwitching = false;
 
 function activeTask() {
   return appState?.tasks?.find((task) => task.id === appState.activeTaskId) || null;
@@ -141,17 +143,24 @@ function scheduleTextSave(doc) {
 }
 
 async function commitTextSave() {
+  if(textSavePromise)await textSavePromise;
   const payload = pendingTextEdit;
-  pendingTextEdit = null;
   if (!payload) return;
-  try {
-    await window.editor2.updateArticleText(payload);
-    ui.saveStatus.textContent = "已自动保存";
-  } catch (error) {
-    pendingTextEdit = payload;
-    ui.saveStatus.textContent = "保存失败，请先刷新核对";
-    toast(error.message || String(error), 12000);
-  }
+  clearTimeout(editSaveTimer);
+  pendingTextEdit = null;
+  const saving=(async()=>{
+    try {
+      await window.editor2.updateArticleText(payload);
+      ui.saveStatus.textContent = "已自动保存";
+    } catch (error) {
+      pendingTextEdit = pendingTextEdit || payload;
+      ui.saveStatus.textContent = "保存失败，请先核对";
+      toast(error.message || String(error), 12000);
+    }
+  })();
+  textSavePromise=saving;
+  await saving;
+  if(textSavePromise===saving)textSavePromise=null;
 }
 
 function attachPreviewEditing(doc) {
@@ -458,9 +467,16 @@ ui.confirmAddModelButton.addEventListener("click", async () => {
 ui.variantSwitcher.addEventListener("click", async (event) => {
   const button = event.target.closest("[data-model-id]");
   const task = activeTask();
-  if (!button || !task) return;
-  appState = await window.editor2.selectVariant(task.id, button.dataset.modelId);
-  renderActive();
+  if (!button || !task || variantSwitching || button.dataset.modelId===task.activeModelId) return;
+  variantSwitching=true;
+  try{
+    await commitTextSave();
+    if(pendingTextEdit)throw new Error("正文尚未保存，请保存成功后再切换模型");
+    appState = await window.editor2.selectVariant(task.id, button.dataset.modelId);
+    selectedText="";
+    renderActive();
+  }catch(error){toast(error.message||String(error),12000);}
+  finally{variantSwitching=false;}
 });
 
 ui.newTaskForm.addEventListener("submit", async (event) => {

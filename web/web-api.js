@@ -45,7 +45,10 @@ window.editor2={
   saveDraft:async p=>{const result=await api('/task/draft/save',{...p,...(uploadedDocument||{})});const t=currentState?.tasks.find(t=>t.id===p.taskId);if(t){t.draftRevision=result.revision;t.updatedAt=result.updatedAt;t.title=result.title;}return result;},
   getState,listModels:()=>api('/models'),
   selectTask:async taskId=>{selections.taskId=taskId;saveSelection();return getState();},
-  selectVariant:async(taskId,modelId)=>{selections.taskId=taskId;selections[taskId]=modelId;saveSelection();return getState();},
+  selectVariant:async(taskId,modelId)=>{
+    const t=currentState?.tasks.find(t=>t.id===taskId);if(!t||!t.variants?.some(v=>v.modelId===modelId))throw new Error('模型版本尚未加载，请重新打开任务');
+    selections.taskId=taskId;selections[taskId]=modelId;saveSelection();return mergeSelection(currentState);
+  },
   createTask:async p=>{
     if(window.wordUploadBusy)throw new Error('Word 正在读取，请读取完成后再生成');
     if(window.wordUploadError)throw new Error(window.wordUploadError+'；请更换 Word 或移除上传后继续');
