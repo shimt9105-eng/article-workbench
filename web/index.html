@@ -6,11 +6,11 @@
   <meta name="referrer" content="no-referrer">
   <title>文章工作台</title>
   <link rel="stylesheet" href="styles.css?v=2.1.4-instant-task-switch">
-  <link rel="stylesheet" href="workbench-theme.css?v=20261013-refined">
+  <link rel="stylesheet" href="workbench-theme.css?v=20261013-editorial">
 </head>
 <body>
   <section id="authPanel" class="auth-screen"><div class="auth-card"><div class="brand-mark">编</div><h1>文章工作台</h1><p id="authError" role="status">正在进入免登录体验…</p><button id="guestRetry" class="secondary hidden">重新连接</button></div></section>
-  <nav id="workflowNav" class="workflow-nav hidden" aria-label="文章创作步骤"><div class="workflow-tabs" role="tablist"><button id="researchTab" type="button" role="tab" aria-controls="researchPanel" data-step="research">01 <span>找对标</span></button><button id="writeTab" type="button" role="tab" aria-controls="workspace" data-step="write">02 <span>开始创作</span></button><button id="feedbackTab" type="button" role="tab" aria-controls="commentsPanel" data-step="feedback">03 <span>提意见</span></button></div></nav>
+  <nav id="workflowNav" class="workflow-nav hidden" aria-label="文章创作步骤"><div class="nav-brand"><div class="brand-mark">编</div><strong>文章工作台</strong></div><div class="workflow-tabs" role="tablist"><button id="researchTab" type="button" role="tab" aria-controls="researchPanel" data-step="research">01 <span>找对标</span></button><button id="writeTab" type="button" role="tab" aria-controls="workspace" data-step="write">02 <span>开始创作</span></button><button id="feedbackTab" type="button" role="tab" aria-controls="commentsPanel" data-step="feedback">03 <span>提意见</span></button></div><span id="saveStatus" class="save-status" role="status"></span></nav>
   <main class="app-shell hidden" id="workspace" data-step="write">
     <aside class="task-pane">
       <div class="brand">
@@ -29,7 +29,7 @@
           <div id="articleMeta" class="meta"></div>
         </div>
         <div class="header-actions">
-          <span id="saveStatus" class="save-status"></span>
+
           <button id="retryVariantButton" class="secondary hidden" type="button">重试失败模型</button>
           <button id="publishButton" class="secondary" disabled>发送到公众号草稿箱</button>
         </div>
@@ -55,7 +55,7 @@
       </section>
 
       <section id="lockedSystemPanel" class="panel hidden">
-        <div class="panel-title"><span>System</span><div class="panel-title-actions"><span class="badge locked">已锁定</span></div></div>
+        <div class="panel-title"><span>写作依据</span><div class="panel-title-actions"><span class="badge locked">已锁定</span></div></div>
         <div id="addModelPanel" class="add-model-panel hidden">
           <div class="add-model-head"><strong>追加写作模型</strong><span>使用当前锁定的 System 生成</span></div>
           <div id="addModelOptions" class="model-options"><div class="model-loading">正在读取已启用模型…</div></div>
