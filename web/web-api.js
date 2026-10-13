@@ -21,11 +21,10 @@ const api=window.webApi;
 window.checkTrialCalls=async calls=>{const q=await api('/quota');if(q.remaining!==undefined&&q.remaining<calls)throw new Error(`只剩 ${q.remaining} 次体验额度，本次需要 ${calls} 次，请减少模型数量或查看历史文章`);};
 function saveSelection(){sessionStorage.setItem('articleSelections',JSON.stringify(selections));}
 function mergeSelection(s){s.activeTaskId=selections.taskId||s.activeTaskId;for(const t of s.tasks)t.activeModelId=selections[t.id]||t.activeModelId;currentState=s;return s;}
-let stateRead=null;
 let lastSnapshot=null;
 function persistCurrentSnapshot(){if(lastSnapshot&&currentState)window.saveWorkbenchSnapshot({...lastSnapshot,state:currentState});}
 async function readState(){const [s,history]=await Promise.all([api('/state'),historyReady]);s.tasks=[...s.tasks,...structuredClone(history)];if(!s.activeTaskId)s.activeTaskId=history[0]?.id||null;const merged=mergeSelection(s);persistCurrentSnapshot();return merged;}
-function getState(){if(!stateRead)stateRead=readState().finally(()=>{stateRead=null;});return stateRead;}
+function getState(){return readState();}
 const cacheIdentity=()=>window.WORKBENCH_API+':'+localStorage.getItem('articleGuestSecret');
 const snapshotDb=new Promise(resolve=>{
   try{const open=indexedDB.open('articleWorkbenchSnapshots',1);open.onupgradeneeded=()=>open.result.createObjectStore('snapshots');open.onsuccess=()=>resolve(open.result);open.onerror=()=>resolve(null);}catch{resolve(null);}
