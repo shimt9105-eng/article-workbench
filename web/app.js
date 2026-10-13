@@ -1,5 +1,5 @@
 const ui = Object.fromEntries([
-  "newTaskButton", "taskList", "articleTitle", "articleMeta", "variantSwitcher", "saveStatus", "retryVariantButton", "publishButton", "articlePreview",
+  "newTaskButton", "taskList", "articleTitle", "articleMeta", "variantSwitcher", "modelToolbar", "saveStatus", "retryVariantButton", "publishButton", "articlePreview",
   "newTaskPanel", "newTaskForm", "modelOptions", "benchmarkInput", "essayInput",
   "lockedSystemPanel", "addModelButton", "addModelPanel", "addModelOptions", "cancelAddModelButton", "confirmAddModelButton",
   "systemDetails", "commentsPanel", "commentCount", "commentList", "selectionChip",
@@ -336,6 +336,7 @@ function renderActive() {
     ui.commentsPanel.classList.add("hidden");
     ui.articleTitle.textContent = task?.title || "新文章";
     ui.articleMeta.textContent = "";
+    ui.modelToolbar.classList.add("hidden");
     ui.variantSwitcher.classList.add("hidden");
     ui.variantSwitcher.innerHTML = "";
     ui.articlePreview.srcdoc = emptyPreviewDocument();
@@ -355,7 +356,8 @@ function renderActive() {
   ui.articleTitle.textContent = task.title;
   ui.articleMeta.textContent = `${variant?.modelName || "模型待定"} · System 已锁定 · ${variant?.status === "processing" ? "正在生成" : variant?.status === "error" ? "生成失败" : "网页预览"}`;
   ui.variantSwitcher.innerHTML = variants.map((item) => `<button class="variant-tab ${item.modelId === variant?.modelId ? "active" : ""}" data-model-id="${escapeHtml(item.modelId)}">${escapeHtml((item.source ? item.source + " / " : "") + item.modelName)}${item.status === "processing" ? " · 生成中" : item.status === "error" ? " · 失败" : ""}</button>`).join("");
-  ui.variantSwitcher.classList.toggle("hidden", variants.length < 2);
+  ui.modelToolbar.classList.remove("hidden");
+  ui.variantSwitcher.classList.toggle("hidden", variants.length === 0);
   ui.articlePreview.srcdoc = previewDocument(task.title, variant?.articleHtml || `<p>${variant?.status === "error" ? escapeHtml(variant.lastError || "生成失败") : "文章尚未生成。"}</p>`, task.readOnly);
   ui.publishButton.disabled = task.readOnly || !publishableVariants(task).length;
   ui.sendCommentButton.disabled=!!task.readOnly;ui.commentInput.disabled=!!task.readOnly;ui.addModelButton.disabled=!!task.readOnly;
@@ -414,6 +416,7 @@ ui.taskList.addEventListener("click", async (event) => {
 });
 
 ui.addModelButton.addEventListener("click", async () => {
+  await window.setWorkflowStep("write");
   ui.addModelPanel.classList.remove("hidden");
   ui.addModelOptions.innerHTML = '<div class="model-loading">正在读取已启用模型…</div>';
   ui.confirmAddModelButton.disabled = true;

@@ -188,3 +188,10 @@ input:focus, textarea:focus, select:focus { border-color: var(--accent); box-sha
   #newTaskPanel { min-height: 480px; }
   #essayInput { min-height: 120px; }
 }
+
+/* Keep the append action next to the article model tabs. */
+.editor-header { flex-wrap: wrap; gap: 8px; }
+.editor-header > div:first-child { min-width: 0; }
+.model-toolbar { flex: 0 0 100%; display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.model-toolbar .variant-switcher { margin-top: 0; }
+.model-toolbar #addModelButton { flex: 0 0 auto; }
