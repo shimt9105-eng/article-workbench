@@ -1,14 +1,14 @@
 /* Presentation only: keep article content and all workflow behavior intact. */
 :root {
-  --bg: #f4f6fb;
+  --bg: #f5f5fa;
   --line: #e5e9f1;
   --line-soft: #eef1f6;
-  --text: #253149;
-  --muted: #7a879b;
-  --accent: #4263eb;
-  --accent-dark: #3452d0;
+  --text: #242738;
+  --muted: #778094;
+  --accent: #5855df;
+  --accent-dark: #4844c7;
   --accent-soft: #eef2ff;
-  --task-width: 240px;
+  --task-width: 224px;
   --context-width: 360px;
   --nav-height: 72px;
 }
@@ -184,3 +184,64 @@ input:focus, textarea:focus, select:focus { border-color: #8ba4fa; box-shadow: 0
   .dialog-card { padding: 22px; }
 }
 @media (prefers-reduced-motion: reduce) { button, .context-pane { transition: none; scroll-behavior: auto; } }
+
+/* Refined writing workspace: visual treatment only, never style iframe content. */
+.workflow-nav { box-shadow: 0 3px 16px #29274804; }
+.workflow-tabs { gap: 18px; }
+.workflow-tabs button { border-radius: 12px; font-variant-numeric: tabular-nums; font-weight: 650; }
+.workflow-tabs button.active { background: #f0efff; border-color: #dedbff; box-shadow: 0 3px 10px #5855df09; }
+.task-pane { background: #fcfcfe; padding-top: 28px; }
+.brand { margin-bottom: 28px; }
+.brand-mark { background: linear-gradient(145deg,#706beb,#504bd4); box-shadow: 0 5px 14px #5855df20; }
+.brand strong { letter-spacing: -.02em; }
+#newTaskButton { border-radius: 11px; box-shadow: 0 4px 12px #5855df20; }
+.pane-label { text-transform: none; letter-spacing: .12em; }
+.task-item { position: relative; border-radius: 12px; padding: 14px 13px; }
+.task-item.active { background: #f0effb; border-color: #e2dff8; color: #4b45b5; }
+.task-item.active::before { content: ''; position: absolute; width: 3px; top: 15px; bottom: 15px; left: -1px; border-radius: 3px; background: var(--accent); }
+.task-item.active span { color: #8179af; }
+.editor-header { background: #fefeff; padding-top: 23px; padding-bottom: 18px; }
+.editor-header h1 { font-weight: 650; font-size: 20px; margin-bottom: 6px; }
+.model-toolbar { padding-top: 14px; margin-top: 3px; }
+.variant-tab, .inline-action { border-radius: 9px; min-height: 32px; }
+.variant-tab.active { background: #f2f0ff; border-color: #c9c3f8; color: #514ac8; }
+.inline-action { color: #5a53b9; border-color: #dfdcf4; }
+.editor-stage { padding: 28px; background: radial-gradient(ellipse at 50% 0%,#eeecf9 0%,#f5f5fa 65%); }
+.article-preview { border: 1px solid #e4e2ed; border-radius: 16px; box-shadow: 0 12px 40px #37334b09,0 2px 6px #37334b03; }
+.context-pane { background: #fefeff; border-left-color: #e7e5ee; }
+.panel-title { letter-spacing: -.02em; }
+.panel-title > span:first-child { font-weight: 650; }
+.badge.locked { background: #edf7f1; color: #3c8567; }
+.system-row span { font-size: 11px; letter-spacing: .025em; }
+.system-row a { color: #5855d6; text-decoration: none; }
+.system-row a:hover { text-decoration: underline; }
+.system-essay { background: #f7f6fb; border-color: #edeaf5; border-radius: 12px; }
+.comment-thread { background: #fff; border-color: #e8e5f0; border-radius: 13px; box-shadow: 0 3px 12px #36304a03; }
+.comment.assistant { background: #f8f7fc; border-radius: 10px; }
+.comment-head { color: #6c6682; }
+.comment p { line-height: 1.9; color: #4b4b5c; }
+.composer-wrap { border-top-color: #eae7f1; box-shadow: 0 -5px 16px #37334b03; }
+.composer-wrap textarea { border-radius: 12px; }
+.composer-wrap .primary { border-radius: 10px; margin-top: 12px; }
+input, textarea, select { border-color: #dedde7; }
+input:focus, textarea:focus, select:focus { border-color: #9990e5; box-shadow: 0 0 0 3px #5855df0b; }
+button:focus-visible, a:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+input[type=file]::file-selector-button { border: 1px solid #dedbe9; border-radius: 7px; padding: 5px 9px; margin-right: 9px; background: #faf9fe; color: #5b547c; font: inherit; cursor: pointer; }
+.app-shell[data-step="research"] #researchPanel { background: #fff; border-radius: 20px; padding: 36px; box-shadow: 0 12px 44px #37334b05; }
+.research-card { border-color: #e6e2f0; border-radius: 14px; background: #fff; box-shadow: 0 3px 12px #37334b03; }
+.research-card h3 { line-height: 1.65; }
+.research-card-actions .primary { border-radius: 8px; }
+.dialog-card { border-radius: 20px; }
+/* Every checkbox remains white, including checked and disabled states. */
+input[type=checkbox], input[type=checkbox]:checked, input[type=checkbox]:disabled { background-color: #fff; }
+@media (max-width:1200px) { .editor-stage { padding: 20px; } .editor-header h1 { font-size: 18px; } }
+@media (max-width:850px) {
+  .workflow-tabs { gap: 3px; }
+  .workflow-tabs button { padding: 0 9px; border-radius: 10px; }
+  .task-pane { padding-top: 20px; }
+  .brand { margin-bottom: 18px; }
+  .editor-stage { padding: 14px; }
+  .editor-header { padding: 20px 16px; }
+  .article-preview { border-radius: 12px; }
+  .app-shell[data-step="research"] #researchPanel { padding: 22px; border-radius: 15px; }
+}
